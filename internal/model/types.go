@@ -19,19 +19,20 @@ type Sandbox struct {
 }
 
 type ContainerState struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Phase       string   `json:"phase"`
-	Error       string   `json:"error,omitempty"`
-	Image       string   `json:"image"`
-	Args        []string `json:"args,omitempty"`
-	Env         []string `json:"env,omitempty"`
-	SnapshotKey string   `json:"snapshotKey"`
-	TaskPID     uint32   `json:"taskPID"`
-	Runtime     string   `json:"runtime"`
-	TaskStatus  string   `json:"taskStatus,omitempty"`
-	ExitStatus  uint32   `json:"exitStatus,omitempty"`
-	ExitTime    string   `json:"exitTime,omitempty"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Phase       string       `json:"phase"`
+	Error       string       `json:"error,omitempty"`
+	Image       string       `json:"image"`
+	Args        []string     `json:"args,omitempty"`
+	Env         []string     `json:"env,omitempty"`
+	Resource    ResourceSpec `json:"resource,omitempty"`
+	SnapshotKey string       `json:"snapshotKey"`
+	TaskPID     uint32       `json:"taskPID"`
+	Runtime     string       `json:"runtime"`
+	TaskStatus  string       `json:"taskStatus,omitempty"`
+	ExitStatus  uint32       `json:"exitStatus,omitempty"`
+	ExitTime    string       `json:"exitTime,omitempty"`
 }
 
 type CreateSandboxRequest struct {
@@ -42,12 +43,12 @@ type CreateSandboxRequest struct {
 }
 
 type CreateContainerRequest struct {
-	Name    string         `json:"name"`
-	Image   string         `json:"image"`
-	Args    []string       `json:"args"`
-	Env     []string       `json:"env"`
-	WorkDir string         `json:"workDir"`
-	Limits  ResourceLimits `json:"limits"`
+	Name     string       `json:"name"`
+	Image    string       `json:"image"`
+	Args     []string     `json:"args"`
+	Env      []string     `json:"env"`
+	WorkDir  string       `json:"workDir"`
+	Resource ResourceSpec `json:"resource"`
 }
 
 type ResourceLimits struct {
@@ -55,6 +56,11 @@ type ResourceLimits struct {
 	CPUQuota    int64  `json:"cpuQuota"`
 	CPUPeriod   uint64 `json:"cpuPeriod"`
 	PidsLimit   int64  `json:"pidsLimit"`
+}
+
+type ResourceSpec struct {
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
 }
 
 type PortMapping struct {

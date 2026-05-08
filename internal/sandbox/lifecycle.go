@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -68,6 +69,22 @@ func (s *Service) createSandbox(ctx context.Context, req model.CreateSandboxRequ
 	releasePorts := s.reserveRequestedPorts(req.ID, req.Ports)
 	unlockPorts()
 	defer releasePorts()
+
+	// Serialize admission decision + state save to avoid race where concurrent
+	// creates both pass admission before either writes creating state.
+	unlockAdmission, err := s.acquireSandboxLock("_admission")
+	if err != nil {
+		return nil, err
+	}
+	defer unlockAdmission()
+
+	if err := s.enforceAdmission(req); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureIPCapacity(req.ID); err != nil {
+		return nil, err
+	}
 
 	sbx := s.newSandboxState(req)
 	if err := s.store.Save(sbx); err != nil {
@@ -138,8 +155,14 @@ func (s *Service) provisionSandboxSync(ctx context.Context, sbx *model.Sandbox, 
 	sharedNetnsPath := netnsPath
 	for _, c := range req.Containers {
 		s.dbg("create container sandbox=%s name=%s image=%s", sbx.ID, c.Name, c.Image)
+		parsedRes, err := parseContainerResource(c.Resource)
+		if err != nil {
+			sbx.Error = err.Error()
+			return nil, err
+		}
+
 		ctrCtx, ctrCancel := context.WithTimeout(ctx, 25*time.Second)
-		st, err := s.createContainer(ctrCtx, sbx.ID+"-"+c.Name, c.Name, c.Image, c.Args, c.Env, c.WorkDir, withDefaultLimits(c.Limits), sharedNetnsPath)
+		st, err := s.createContainer(ctrCtx, sbx.ID, sbx.ID+"-"+c.Name, c.Name, c.Image, c.Args, c.Env, c.WorkDir, parsedResourceToLimits(parsedRes), c.Resource, sharedNetnsPath)
 		ctrCancel()
 		if err != nil {
 			sbx.Error = err.Error()
@@ -276,6 +299,49 @@ func (s *Service) ListSandboxes(_ context.Context) ([]*model.Sandbox, error) {
 	}
 
 	return out, nil
+}
+
+func (s *Service) ListSandboxesPage(_ context.Context, cursor string, limit int) ([]*model.Sandbox, string, error) {
+	ctx := namespaces.WithNamespace(context.Background(), s.namespace)
+	all, err := s.store.List()
+	if err != nil {
+		return nil, "", err
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if limit > 200 {
+		limit = 200
+	}
+
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	start := 0
+	if cursor != "" {
+		for i := range all {
+			if all[i].ID > cursor {
+				start = i
+				break
+			}
+
+			start = len(all)
+		}
+	}
+
+	page := make([]*model.Sandbox, 0, limit)
+	for i := start; i < len(all) && len(page) < limit; i++ {
+		cp := copySandbox(all[i])
+		s.refreshSandboxRuntimeState(ctx, cp)
+		page = append(page, cp)
+	}
+
+	nextCursor := ""
+	if start+len(page) < len(all) && len(page) > 0 {
+		nextCursor = page[len(page)-1].ID
+	}
+
+	return page, nextCursor, nil
 }
 
 func (s *Service) GetSandbox(ctx context.Context, id string) (*model.Sandbox, error) {

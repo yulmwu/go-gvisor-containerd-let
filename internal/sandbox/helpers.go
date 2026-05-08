@@ -6,30 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"example.com/sandbox-demo/internal/model"
 	"golang.org/x/sys/unix"
 )
-
-func withDefaultLimits(in model.ResourceLimits) model.ResourceLimits {
-	out := in
-	if out.MemoryBytes <= 0 {
-		out.MemoryBytes = 128 * 1024 * 1024
-	}
-
-	if out.CPUQuota <= 0 {
-		out.CPUQuota = 50000
-	}
-
-	if out.CPUPeriod == 0 {
-		out.CPUPeriod = 100000
-	}
-
-	if out.PidsLimit <= 0 {
-		out.PidsLimit = 128
-	}
-
-	return out
-}
 
 func (s *Service) acquireSandboxLock(sandboxID string) (func(), error) {
 	if sandboxID == "" {

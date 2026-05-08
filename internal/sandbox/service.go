@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,7 @@ type Config struct {
 	ReconcileGrace    time.Duration
 	ReconcileHits     int
 	RuntimeBinary     string
+	MaxAllocPercent   int
 	Debug             bool
 }
 
@@ -81,6 +83,7 @@ func DefaultConfig() Config {
 		ReconcileGrace:    DefaultReconcileGrace,
 		ReconcileHits:     DefaultReconcileHits,
 		RuntimeBinary:     getenv("SANDBOX_RUNTIME_BINARY", DefaultRuntimeBinary),
+		MaxAllocPercent:   getenvInt("SANDBOX_MAX_ALLOC_PERCENT", 90),
 		Debug:             strings.EqualFold(os.Getenv("SANDBOX_DEBUG"), "true") || os.Getenv("SANDBOX_DEBUG") == "1",
 	}
 }
@@ -187,6 +190,9 @@ func withConfigDefaults(cfg Config) Config {
 	if cfg.RuntimeBinary == "" {
 		cfg.RuntimeBinary = DefaultRuntimeBinary
 	}
+	if cfg.MaxAllocPercent <= 0 || cfg.MaxAllocPercent > 100 {
+		cfg.MaxAllocPercent = 90
+	}
 
 	return cfg
 }
@@ -197,6 +203,20 @@ func getenv(k, def string) string {
 		return def
 	}
 	return v
+}
+
+func getenvInt(k string, def int) int {
+	v := strings.TrimSpace(os.Getenv(k))
+	if v == "" {
+		return def
+	}
+
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+
+	return n
 }
 
 func splitCSV(raw string) []string {

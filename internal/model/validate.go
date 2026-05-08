@@ -20,6 +20,14 @@ func (r CreateSandboxRequest) Validate() error {
 			return fmt.Errorf("container name and image are required")
 		}
 
+		if _, err := ParseCPUMilli(c.Resource.CPU); err != nil {
+			return fmt.Errorf("container %s: %w", c.Name, err)
+		}
+
+		if _, err := ParseMemoryBytes(c.Resource.Memory); err != nil {
+			return fmt.Errorf("container %s: %w", c.Name, err)
+		}
+
 		if _, ok := seenNames[c.Name]; ok {
 			return fmt.Errorf("duplicate container name: %s", c.Name)
 		}

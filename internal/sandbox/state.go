@@ -48,13 +48,14 @@ func (s *Service) newSandboxState(req model.CreateSandboxRequest) *model.Sandbox
 	sbx.Ports = append(sbx.Ports, req.Ports...)
 	for _, c := range req.Containers {
 		sbx.Containers[c.Name] = model.ContainerState{
-			ID:      sbx.ID + "-" + c.Name,
-			Name:    c.Name,
-			Phase:   ContainerPhaseCreating,
-			Image:   c.Image,
-			Args:    append([]string(nil), c.Args...),
-			Env:     append([]string(nil), c.Env...),
-			Runtime: s.runtimeBinary,
+			ID:       sbx.ID + "-" + c.Name,
+			Name:     c.Name,
+			Phase:    ContainerPhaseCreating,
+			Image:    c.Image,
+			Args:     append([]string(nil), c.Args...),
+			Env:      append([]string(nil), c.Env...),
+			Resource: c.Resource,
+			Runtime:  s.runtimeBinary,
 		}
 	}
 

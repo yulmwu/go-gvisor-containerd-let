@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -20,7 +21,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-func (s *Service) createContainer(ctx context.Context, id, name, image string, args, env []string, workDir string, lim model.ResourceLimits, netnsPath string) (model.ContainerState, error) {
+func (s *Service) createContainer(ctx context.Context, sandboxID, id, name, image string, args, env []string, workDir string, lim model.ResourceLimits, resource model.ResourceSpec, netnsPath string) (model.ContainerState, error) {
 	s.dbg("container create call id=%s image=%s", id, image)
 	ref := normalizeImage(image)
 
@@ -84,7 +85,18 @@ func (s *Service) createContainer(ctx context.Context, id, name, image string, a
 			return model.ContainerState{}, fmt.Errorf("new container %q: %w", id, err)
 		}
 
-		task, err := ctr.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+		logPath, err := s.containerLogPath(sandboxID, name)
+		if err != nil {
+			_ = ctr.Delete(ctx)
+			return model.ContainerState{}, fmt.Errorf("invalid log path: %w", err)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+			_ = ctr.Delete(ctx)
+			return model.ContainerState{}, fmt.Errorf("create log directory: %w", err)
+		}
+
+		task, err := ctr.NewTask(ctx, cio.LogFile(logPath))
 		if err != nil {
 			_ = ctr.Delete(ctx)
 			if isTransientRuntimeErr(err) {
@@ -107,7 +119,7 @@ func (s *Service) createContainer(ctx context.Context, id, name, image string, a
 		}
 
 		s.dbg("container create success id=%s pid=%d", id, task.Pid())
-		return model.ContainerState{ID: id, Name: name, Phase: ContainerPhaseRunning, Image: ref, Args: args, Env: env, SnapshotKey: snap, TaskPID: task.Pid(), Runtime: s.runtimeBinary, TaskStatus: "running"}, nil
+		return model.ContainerState{ID: id, Name: name, Phase: ContainerPhaseRunning, Image: ref, Args: args, Env: env, Resource: resource, SnapshotKey: snap, TaskPID: task.Pid(), Runtime: s.runtimeBinary, TaskStatus: "running"}, nil
 	}
 
 	return model.ContainerState{}, fmt.Errorf("start task %q: exceeded retry attempts", id)
