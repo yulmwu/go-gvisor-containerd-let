@@ -3,7 +3,7 @@ set -euo pipefail
 
 CNI_VERSION="v1.9.0"
 ARCH="amd64"
-RUNSC_RELEASE_URL="https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}"
+GVISOR_ARCH="x86_64"
 SBX_CNI_CONF_DIR="/etc/cni/net.d"
 SBX_CNI_CONF_FILE="${SBX_CNI_CONF_DIR}/20-sbxnet.conflist"
 
@@ -17,6 +17,25 @@ preflight_checks() {
   need curl
   need tar
   need jq
+}
+
+detect_arch() {
+  local m
+  m="$(uname -m)"
+  case "${m}" in
+    x86_64|amd64)
+      ARCH="amd64"
+      GVISOR_ARCH="x86_64"
+      ;;
+    aarch64|arm64)
+      ARCH="arm64"
+      GVISOR_ARCH="aarch64"
+      ;;
+    *)
+      die "unsupported architecture: ${m}"
+      ;;
+  esac
+  log "Detected arch: cni=${ARCH}, gvisor=${GVISOR_ARCH}"
 }
 
 install_containerd_pkg() {
@@ -62,10 +81,29 @@ CONF
 
 install_runsc() {
   log "Installing gVisor runsc"
-  curl -fsSL -o /tmp/runsc "${RUNSC_RELEASE_URL}/runsc"
-  curl -fsSL -o /tmp/containerd-shim-runsc-v1 "${RUNSC_RELEASE_URL}/containerd-shim-runsc-v1"
+
+  download_gvisor_asset runsc /tmp/runsc
+  download_gvisor_asset containerd-shim-runsc-v1 /tmp/containerd-shim-runsc-v1
+
   sudo install -m 0755 /tmp/runsc /usr/local/bin/runsc
   sudo install -m 0755 /tmp/containerd-shim-runsc-v1 /usr/local/bin/containerd-shim-runsc-v1
+}
+
+download_gvisor_asset() {
+  local asset="$1"
+  local out="$2"
+  local urls=(
+    "https://storage.googleapis.com/gvisor/releases/release/latest/${GVISOR_ARCH}/${asset}"
+  )
+
+  for u in "${urls[@]}"; do
+    if curl -fsSL -o "${out}" "${u}"; then
+      log "Downloaded ${asset} from ${u}"
+      return 0
+    fi
+  done
+
+  die "failed to download ${asset}; tried known gVisor release URLs"
 }
 
 configure_containerd_for_runsc() {
@@ -144,6 +182,7 @@ ENV
 
 main() {
   preflight_checks
+  detect_arch
   install_base
   install_cni
   install_runsc
@@ -160,4 +199,3 @@ main() {
 }
 
 main "$@"
-
