@@ -44,12 +44,6 @@ func (s *Service) createSandbox(ctx context.Context, req model.CreateSandboxRequ
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-	if err := s.enforceAdmission(req); err != nil {
-		return nil, err
-	}
-	if err := s.ensureIPCapacity(req.ID); err != nil {
-		return nil, err
-	}
 
 	if _, err := s.store.Load(req.ID); err == nil {
 		return nil, fmt.Errorf("sandbox already exists: %s", req.ID)
@@ -75,6 +69,22 @@ func (s *Service) createSandbox(ctx context.Context, req model.CreateSandboxRequ
 	releasePorts := s.reserveRequestedPorts(req.ID, req.Ports)
 	unlockPorts()
 	defer releasePorts()
+
+	// Serialize admission decision + state save to avoid race where concurrent
+	// creates both pass admission before either writes creating state.
+	unlockAdmission, err := s.acquireSandboxLock("_admission")
+	if err != nil {
+		return nil, err
+	}
+	defer unlockAdmission()
+
+	if err := s.enforceAdmission(req); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureIPCapacity(req.ID); err != nil {
+		return nil, err
+	}
 
 	sbx := s.newSandboxState(req)
 	if err := s.store.Save(sbx); err != nil {

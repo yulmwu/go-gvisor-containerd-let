@@ -3,6 +3,7 @@ package sandbox
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,14 +12,43 @@ import (
 	"strings"
 )
 
+var ErrInvalidCursor = errors.New("invalid cursor")
+
 type LogsPage struct {
 	Lines      []string `json:"lines"`
 	NextCursor string   `json:"next_cursor,omitempty"`
 	HasMore    bool     `json:"has_more"`
 }
 
-func (s *Service) containerLogPath(sandboxID, containerName string) string {
-	return filepath.Join(s.cfg.StateBaseDir, sandboxID, "logs", containerName+".log")
+func validatePathToken(v string) error {
+	if v == "" {
+		return fmt.Errorf("empty path token")
+	}
+
+	if strings.Contains(v, "/") || strings.Contains(v, "\\") || strings.Contains(v, "..") {
+		return fmt.Errorf("invalid path token")
+	}
+
+	return nil
+}
+
+func (s *Service) containerLogPath(sandboxID, containerName string) (string, error) {
+	if err := validatePathToken(sandboxID); err != nil {
+		return "", fmt.Errorf("invalid sandbox id")
+	}
+
+	if err := validatePathToken(containerName); err != nil {
+		return "", fmt.Errorf("invalid container name")
+	}
+
+	logDir := filepath.Join(s.cfg.StateBaseDir, sandboxID, "logs")
+	path := filepath.Clean(filepath.Join(logDir, containerName+".log"))
+	logDirClean := filepath.Clean(logDir)
+	if path != logDirClean && !strings.HasPrefix(path, logDirClean+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid log path")
+	}
+
+	return path, nil
 }
 
 func (s *Service) GetContainerLogs(_ context.Context, sandboxID, containerName, cursor string, limit int) (*LogsPage, error) {
@@ -38,12 +68,16 @@ func (s *Service) GetContainerLogs(_ context.Context, sandboxID, containerName, 
 	if strings.TrimSpace(cursor) != "" {
 		v, err := strconv.ParseInt(cursor, 10, 64)
 		if err != nil || v < 0 {
-			return nil, fmt.Errorf("invalid cursor")
+			return nil, ErrInvalidCursor
 		}
 		offset = v
 	}
 
-	path := s.containerLogPath(sandboxID, containerName)
+	path, err := s.containerLogPath(sandboxID, containerName)
+	if err != nil {
+		return nil, err
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

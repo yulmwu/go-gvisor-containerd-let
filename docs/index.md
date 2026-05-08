@@ -105,6 +105,8 @@ Base URL: `http://localhost:8080`
                     "cpu": "250m",
                     "memory": "256Mi"
                 },
+                "snapshotKey": "",
+                "taskPID": 0,
                 "runtime": "runc"
             },
             "worker": {
@@ -117,6 +119,8 @@ Base URL: `http://localhost:8080`
                     "cpu": "100m",
                     "memory": "128Mi"
                 },
+                "snapshotKey": "",
+                "taskPID": 0,
                 "runtime": "runc"
             }
         },
@@ -291,8 +295,12 @@ Base URL: `http://localhost:8080`
 - Max `limit`: `1000`
 - Success: `200 OK`
 - Failure:
-    - `404 Not Found` (log file not found)
+    - `404 Not Found` (sandbox/container does not exist and log file is missing)
     - `400 Bad Request` (invalid cursor/limit)
+    - `500 Internal Server Error` (log file read I/O failure)
+
+Note:
+- If the container exists but the log file is not created yet, the API returns `200` with `lines: []`.
 
 **Response**
 

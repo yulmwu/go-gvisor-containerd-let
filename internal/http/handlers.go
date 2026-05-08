@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"example.com/sandbox-demo/internal/model"
+	"example.com/sandbox-demo/internal/sandbox"
 	"github.com/gin-gonic/gin"
 )
 
@@ -90,7 +91,17 @@ func (s *Server) reconcile(c *gin.Context) {
 
 func (s *Server) getContainerLogs(c *gin.Context) {
 	cursor := c.Query("cursor")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	limitRaw := c.Query("limit")
+	limit := 100
+	if limitRaw != "" {
+		n, err := strconv.Atoi(limitRaw)
+		if err != nil || n < 0 {
+			respondErrorMessage(c, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = n
+	}
+
 	sandboxID := c.Param("id")
 	containerName := c.Param("name")
 
@@ -116,7 +127,12 @@ func (s *Server) getContainerLogs(c *gin.Context) {
 			return
 		}
 
-		respondError(c, http.StatusBadRequest, err)
+		if errors.Is(err, sandbox.ErrInvalidCursor) {
+			respondErrorMessage(c, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+
+		respondErrorMessage(c, http.StatusInternalServerError, "failed to read logs")
 		return
 	}
 

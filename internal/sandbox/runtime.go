@@ -85,7 +85,12 @@ func (s *Service) createContainer(ctx context.Context, sandboxID, id, name, imag
 			return model.ContainerState{}, fmt.Errorf("new container %q: %w", id, err)
 		}
 
-		logPath := s.containerLogPath(sandboxID, name)
+		logPath, err := s.containerLogPath(sandboxID, name)
+		if err != nil {
+			_ = ctr.Delete(ctx)
+			return model.ContainerState{}, fmt.Errorf("invalid log path: %w", err)
+		}
+
 		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 			_ = ctr.Delete(ctx)
 			return model.ContainerState{}, fmt.Errorf("create log directory: %w", err)
