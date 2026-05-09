@@ -23,7 +23,7 @@ const (
 	DefaultBridgeInterface = "sbx-br0"
 	DefaultSubnetCIDR      = "10.89.0.0/16"
 	DefaultCNIConfPath     = "/etc/cni/net.d/20-sbxnet.conflist"
-	DefaultRuntimeBinary   = "runc"
+	DefaultRuntimeBinary   = "runsc"
 	DefaultReadyTimeout    = 20 * time.Second
 	DefaultReconcileEvery  = 15 * time.Second
 	DefaultReconcileGrace  = 5 * time.Second
