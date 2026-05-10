@@ -148,8 +148,6 @@ configure_network() {
         "dataDir": "/var/lib/cni/sbxnet"
       }
     },
-    {"type": "firewall"},
-    {"type": "portmap", "capabilities": {"portMappings": true}},
     {"type": "loopback"}
   ]
 }
