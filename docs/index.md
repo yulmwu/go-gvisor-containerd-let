@@ -371,39 +371,48 @@ Note:
 
 ```json
 {
-    'id': 'sbx-wordpress-demo',
-    'egress': true,
-    'ports': [{ 'hostPort': 30080, 'containerPort': 80, 'protocol': 'tcp' }],
-    'containers':
-        [
-            {
-                'name': 'wordpress',
-                'image': 'wordpress:6.9.4-php8.3-apache',
-                'args': [],
-                'env':
-                    [
-                        'WORDPRESS_DB_HOST=127.0.0.1:3306',
-                        'WORDPRESS_DB_USER=wordpress',
-                        'WORDPRESS_DB_PASSWORD=wordpress-pass',
-                        'WORDPRESS_DB_NAME=wordpress',
-                    ],
-                'workDir': '',
-                'resource': { 'cpu': '200m', 'memory': '512Mi' },
-            },
-            {
-                'name': 'mysql',
-                'image': 'mysql:8.4',
-                'args': [],
-                'env':
-                    [
-                        'MYSQL_DATABASE=wordpress',
-                        'MYSQL_USER=wordpress',
-                        'MYSQL_PASSWORD=wordpress-pass',
-                        'MYSQL_ROOT_PASSWORD=root-pass',
-                    ],
-                'workDir': '',
-                'resource': { 'cpu': '200m', 'memory': '768Mi' },
-            },
-        ],
+    "id": "sbx-wordpress-demo",
+    "egress": true,
+    "ports": [
+        {
+            "hostPort": 30080,
+            "containerPort": 80,
+            "protocol": "tcp"
+        }
+    ],
+    "containers": [
+        {
+            "name": "wordpress",
+            "image": "wordpress:6.9.4-php8.3-apache",
+            "args": [],
+            "env": [
+                "WORDPRESS_DB_HOST=127.0.0.1:3306",
+                "WORDPRESS_DB_USER=wordpress",
+                "WORDPRESS_DB_PASSWORD=wordpress-pass",
+                "WORDPRESS_DB_NAME=wordpress"
+            ],
+            "workDir": "",
+            "resource": {
+                "cpu": "200m",
+                "memory": "512Mi"
+            }
+        },
+        {
+            "name": "mysql",
+            "image": "mysql:8.4",
+            "args": [],
+            "env": [
+                "MYSQL_DATABASE=wordpress",
+                "MYSQL_USER=wordpress",
+                "MYSQL_PASSWORD=wordpress-pass",
+                "MYSQL_ROOT_PASSWORD=root-pass"
+            ],
+            "workDir": "",
+            "resource": {
+                "cpu": "200m",
+                "memory": "768Mi"
+            }
+        }
+    ]
 }
 ```

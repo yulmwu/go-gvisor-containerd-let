@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>sandboxd REST Test UI</title>
+        <style>
+            body {
+                margin: 16px;
+                font-family: Arial, sans-serif;
+                background: #fff;
+                color: #111;
+                line-height: 1.4;
+            }
+            h1 {
+                margin: 0 0 12px 0;
+                font-size: 20px;
+            }
+            h2 {
+                margin: 16px 0 8px 0;
+                font-size: 16px;
+            }
+            .row {
+                margin: 8px 0;
+            }
+            input,
+            textarea,
+            button {
+                font: inherit;
+                padding: 6px 8px;
+                box-sizing: border-box;
+            }
+            input,
+            textarea {
+                width: 100%;
+                max-width: 900px;
+            }
+            textarea {
+                min-height: 140px;
+            }
+            button {
+                cursor: pointer;
+                margin-right: 6px;
+            }
+            .small {
+                width: 280px;
+            }
+            pre {
+                background: #f6f6f6;
+                border: 1px solid #ddd;
+                padding: 10px;
+                overflow: auto;
+                white-space: pre-wrap;
+            }
+            .muted {
+                color: #666;
+                font-size: 13px;
+            }
+            .tabs {
+                margin: 14px 0 10px 0;
+                display: inline-flex;
+                border: 1px solid #d9d9d9;
+                border-radius: 10px;
+                overflow: hidden;
+                background: #f7f7f7;
+            }
+            .tab-btn {
+                border: 0;
+                border-right: 1px solid #d9d9d9;
+                background: transparent;
+                padding: 8px 14px;
+                cursor: pointer;
+                font-weight: 600;
+                color: #444;
+                transition:
+                    background-color 0.15s ease,
+                    color 0.15s ease;
+                margin: 0;
+            }
+            .tab-btn:last-child {
+                border-right: 0;
+            }
+            .tab-btn:hover {
+                background: #ececec;
+                color: #111;
+            }
+            .tab-btn.active {
+                background: #fff;
+                color: #111;
+                box-shadow: inset 0 -2px 0 #111;
+            }
+            .panel {
+                display: none;
+                border: 1px solid #ddd;
+                padding: 10px;
+                margin-bottom: 14px;
+            }
+            .panel.active {
+                display: block;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 8px;
+                margin: 8px 0;
+            }
+            .card {
+                border: 1px solid #ddd;
+                background: #fafafa;
+                padding: 8px;
+            }
+            .card-title {
+                font-weight: 700;
+                margin-bottom: 4px;
+            }
+            .kv {
+                margin: 2px 0;
+                font-size: 13px;
+            }
+            .mono {
+                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>sandboxd REST Test UI</h1>
+        <div class="muted">Base URL: <code id="origin"></code> (query: <code>?baseUrl=http://host:port</code>)</div>
+
+        <h2>Common Sandbox Input</h2>
+        <div class="row">
+            <input
+                id="commonSandboxId"
+                class="small"
+                placeholder="sandbox id (shared by Get/Delete/Logs)"
+                value="sbx-ui-demo"
+            />
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="tab-ops">Ops</button>
+            <button class="tab-btn" data-tab="tab-sandbox">Sandbox</button>
+            <button class="tab-btn" data-tab="tab-logs">Logs</button>
+        </div>
+
+        <div id="tab-ops" class="panel active">
+            <h2>Ops</h2>
+            <div class="row">
+                <button id="btnHealth">GET /healthz</button>
+                <button id="btnList">GET /v1/sandboxes</button>
+                <button id="btnReconcile">POST /v1/reconcile</button>
+            </div>
+        </div>
+
+        <div id="tab-sandbox" class="panel">
+            <h2>Sandbox</h2>
+            <div class="row">
+                <textarea id="createBody"></textarea>
+            </div>
+            <div class="row">
+                <button id="btnCreate">POST /v1/sandboxes</button>
+                <button id="btnGet">GET /v1/sandboxes/{id}</button>
+                <button id="btnDelete">DELETE /v1/sandboxes/{id}</button>
+            </div>
+        </div>
+
+        <div id="tab-logs" class="panel">
+            <h2>Logs</h2>
+            <div class="row">
+                <input id="logName" class="small" placeholder="container name" value="web" />
+            </div>
+            <div class="row">
+                <button id="btnLogs">GET /v1/sandboxes/{id}/containers/{name}/logs</button>
+            </div>
+        </div>
+
+        <h2>Structured View</h2>
+        <div id="structured" class="grid"></div>
+
+        <h2>Response</h2>
+        <pre id="result">(no request yet)</pre>
+
+        <script>
+            const originEl = document.getElementById('origin')
+            const resultEl = document.getElementById('result')
+            const structuredEl = document.getElementById('structured')
+            const qs = new URLSearchParams(window.location.search)
+            const baseUrlParam = (qs.get('baseUrl') || '').trim()
+            const baseUrl = baseUrlParam ? baseUrlParam.replace(/\/+$/, '') : window.location.origin
+            originEl.textContent = baseUrl
+
+            const defaultCreatePayload = {
+                id: 'sbx-ui-demo',
+                egress: true,
+                ports: [{ hostPort: 30180, containerPort: 8080, protocol: 'tcp' }],
+                containers: [
+                    {
+                        name: 'web',
+                        image: 'python:3.12-alpine',
+                        args: ['sh', '-c', 'python -m http.server 8080'],
+                        env: [],
+                        workDir: '',
+                        resource: { cpu: '200m', memory: '256Mi' },
+                    },
+                ],
+            }
+            document.getElementById('createBody').value = JSON.stringify(defaultCreatePayload, null, 2)
+
+            function activeSandboxId() {
+                return document.getElementById('commonSandboxId').value.trim()
+            }
+
+            function asText(v) {
+                if (v === undefined || v === null || v === '') return '-'
+                return String(v)
+            }
+
+            function renderStructured(data) {
+                structuredEl.innerHTML = ''
+                if (!data || typeof data !== 'object') return
+                const externalIP = data.external_ip || ''
+
+                const sandbox = data.sandbox || (Array.isArray(data.items) ? null : data)
+                if (sandbox && sandbox.id) {
+                    const cards = []
+                    cards.push(`
+          <div class="card">
+            <div class="card-title">Sandbox</div>
+            <div class="kv"><b>ID:</b> <span class="mono">${asText(sandbox.id)}</span></div>
+            <div class="kv"><b>Phase:</b> ${asText(sandbox.phase)}</div>
+            <div class="kv"><b>IP:</b> <span class="mono">${asText(sandbox.ip)}</span></div>
+            <div class="kv"><b>Egress:</b> ${asText(sandbox.egress)}</div>
+            <div class="kv"><b>Public IP:</b> <span class="mono">${asText(externalIP)}</span></div>
+          </div>
+        `)
+                    const ports = Array.isArray(sandbox.ports) ? sandbox.ports : []
+                    if (ports.length > 0) {
+                        const links = ports
+                            .map((p) => {
+                                const proto = String(p.protocol || 'tcp').toLowerCase()
+                                const hostPort = p.hostPort
+                                const target =
+                                    proto === 'tcp' && externalIP
+                                        ? `<a href="http://${externalIP}:${hostPort}" target="_blank" rel="noopener">http://${externalIP}:${hostPort}</a>`
+                                        : '-'
+                                return `<div class="kv"><b>${proto.toUpperCase()} ${hostPort} → ${p.containerPort}</b>: ${target}</div>`
+                            })
+                            .join('')
+                        cards.push(`
+            <div class="card">
+              <div class="card-title">Published Ports</div>
+              ${links}
+            </div>
+          `)
+                    }
+                    const containers = sandbox.containers || {}
+                    Object.keys(containers).forEach((name) => {
+                        const c = containers[name]
+                        cards.push(`
+            <div class="card">
+              <div class="card-title">Container: ${name}</div>
+              <div class="kv"><b>ID:</b> <span class="mono">${asText(c.id)}</span></div>
+              <div class="kv"><b>Phase:</b> ${asText(c.phase)}</div>
+              <div class="kv"><b>Image:</b> <span class="mono">${asText(c.image)}</span></div>
+              <div class="kv"><b>Task:</b> ${asText(c.taskStatus)}</div>
+              <div class="kv"><b>PID:</b> ${asText(c.taskPID)}</div>
+            </div>
+          `)
+                    })
+                    structuredEl.innerHTML = cards.join('')
+                    return
+                }
+
+                if (Array.isArray(data.items)) {
+                    const cards = data.items.map(
+                        (s) => `
+          <div class="card">
+            <div class="card-title">${asText(s.id)}</div>
+            <div class="kv"><b>Phase:</b> ${asText(s.phase)}</div>
+            <div class="kv"><b>IP:</b> <span class="mono">${asText(s.ip)}</span></div>
+            <div class="kv"><b>Public IP:</b> <span class="mono">${asText(externalIP)}</span></div>
+            <div class="kv"><b>Containers:</b> ${Object.keys(s.containers || {}).length}</div>
+          </div>
+        `,
+                    )
+                    structuredEl.innerHTML = cards.join('')
+                    return
+                }
+
+                if (data.logs && Array.isArray(data.logs.lines)) {
+                    const lines = data.logs.lines.length
+                    structuredEl.innerHTML = `
+          <div class="card">
+            <div class="card-title">Logs</div>
+            <div class="kv"><b>Sandbox:</b> ${asText(data.sandbox_id)}</div>
+            <div class="kv"><b>Container:</b> ${asText(data.container)}</div>
+            <div class="kv"><b>Lines:</b> ${lines}</div>
+            <div class="kv"><b>HasMore:</b> ${asText(data.logs.has_more)}</div>
+            <div class="kv"><b>NextCursor:</b> <span class="mono">${asText(data.logs.next_cursor)}</span></div>
+          </div>
+        `
+                }
+            }
+
+            function buildUrl(path) {
+                if (!path.startsWith('/')) return baseUrl + '/' + path
+                return baseUrl + path
+            }
+
+            async function callApi(path, method, body) {
+                const url = buildUrl(path)
+                const opts = { method, headers: {} }
+                if (body !== undefined) {
+                    opts.headers['Content-Type'] = 'application/json'
+                    opts.body = JSON.stringify(body)
+                }
+
+                const started = new Date().toISOString()
+                try {
+                    const res = await fetch(url, opts)
+                    const text = await res.text()
+                    let parsed = text
+                    try {
+                        parsed = JSON.parse(text)
+                    } catch (_) {}
+                    if (typeof parsed !== 'string') renderStructured(parsed)
+                    resultEl.textContent =
+                        'time: ' +
+                        started +
+                        '\n' +
+                        'request: ' +
+                        method +
+                        ' ' +
+                        url +
+                        '\n' +
+                        'status: ' +
+                        res.status +
+                        ' ' +
+                        res.statusText +
+                        '\n\n' +
+                        (typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2))
+                } catch (err) {
+                    structuredEl.innerHTML = ''
+                    resultEl.textContent =
+                        'time: ' + started + '\n' + 'request: ' + method + ' ' + url + '\n' + 'error: ' + String(err)
+                }
+            }
+
+            document.getElementById('btnHealth').onclick = () => callApi('/healthz', 'GET')
+            document.getElementById('btnList').onclick = () => callApi('/v1/sandboxes', 'GET')
+            document.getElementById('btnReconcile').onclick = () => callApi('/v1/reconcile', 'POST')
+
+            document.getElementById('btnCreate').onclick = () => {
+                try {
+                    const body = JSON.parse(document.getElementById('createBody').value)
+                    callApi('/v1/sandboxes', 'POST', body)
+                } catch (e) {
+                    resultEl.textContent = 'invalid JSON body: ' + String(e)
+                }
+            }
+
+            document.getElementById('btnGet').onclick = () => {
+                const id = activeSandboxId()
+                if (!id) return (resultEl.textContent = 'sandbox id is required')
+                callApi('/v1/sandboxes/' + encodeURIComponent(id), 'GET')
+            }
+
+            document.getElementById('btnDelete').onclick = () => {
+                const id = activeSandboxId()
+                if (!id) return (resultEl.textContent = 'sandbox id is required')
+                callApi('/v1/sandboxes/' + encodeURIComponent(id), 'DELETE')
+            }
+
+            document.getElementById('btnLogs').onclick = () => {
+                const sbx = activeSandboxId()
+                const name = document.getElementById('logName').value.trim()
+                if (!sbx || !name) return (resultEl.textContent = 'sandbox id and container name are required')
+                callApi(
+                    '/v1/sandboxes/' + encodeURIComponent(sbx) + '/containers/' + encodeURIComponent(name) + '/logs',
+                    'GET',
+                )
+            }
+
+            document.querySelectorAll('.tab-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const tab = btn.getAttribute('data-tab')
+                    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'))
+                    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'))
+                    document.getElementById(tab).classList.add('active')
+                    btn.classList.add('active')
+                })
+            })
+        </script>
+    </body>
+</html>
