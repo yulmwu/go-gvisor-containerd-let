@@ -126,7 +126,14 @@ func (s *Service) CreateSandboxAsync(ctx context.Context, req model.CreateSandbo
 
 func (s *Service) createSandbox(ctx context.Context, req model.CreateSandboxRequest, async bool) (*model.Sandbox, error) {
 	s.dbg("create request sandbox=%s async=%t containers=%d ports=%d egress=%t", req.ID, async, len(req.Containers), len(req.Ports), req.Egress)
-	opCtx, opCancel := context.WithTimeout(ctx, 90*time.Second)
+	// Async create only needs request/preflight window.
+	// Sync create must allow configured provisioning/pull windows.
+	opTimeout := 90 * time.Second
+	if !async {
+		opTimeout = s.cfg.ProvisionTimeout + s.cfg.ImagePullTimeout + s.cfg.ContainerCreateTimeout
+	}
+
+	opCtx, opCancel := context.WithTimeout(ctx, opTimeout)
 	defer opCancel()
 	ctx = opCtx
 
@@ -257,6 +264,7 @@ func (s *Service) provisionSandboxSync(ctx context.Context, sbx *model.Sandbox, 
 		s.dbg("create container sandbox=%s name=%s image=%s", sbx.ID, c.Name, c.Image)
 		parsedRes, err := parseContainerResource(c.Resource)
 		if err != nil {
+			err = fmt.Errorf("container %s: %w", c.Name, err)
 			sbx.Error = err.Error()
 			return nil, err
 		}

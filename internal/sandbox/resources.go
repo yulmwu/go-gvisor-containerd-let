@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/resource"
 	"sandboxd/internal/model"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type parsedResource struct {

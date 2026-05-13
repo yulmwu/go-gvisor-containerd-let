@@ -136,7 +136,14 @@ func (s *Service) ListRuntimeSandboxIDs(ctx context.Context) ([]string, error) {
 
 		md := st.GetMetadata()
 		if md != nil && (strings.HasPrefix(md.GetUid(), "sbx-") || strings.HasPrefix(md.GetName(), "sbx-")) {
-			ids[id] = struct{}{}
+			sbxID := strings.TrimSpace(md.GetUid())
+			if sbxID == "" {
+				sbxID = strings.TrimSpace(md.GetName())
+			}
+
+			if sbxID != "" {
+				ids[sbxID] = struct{}{}
+			}
 		}
 	}
 
@@ -182,8 +189,11 @@ func (s *Service) CleanupSandboxResources(ctx context.Context, sandboxID string)
 
 func (s *Service) cleanupOrphanRuntimeSandbox(ctx context.Context, sandboxID string) error {
 	tmp := &model.Sandbox{ID: sandboxID, Namespace: s.namespace, IP: s.sandboxIPFromCNICache(sandboxID), BridgeName: s.bridgeIF, Containers: map[string]model.ContainerState{}}
+	if podID, ok := s.findManagedPodSandboxID(ctx, sandboxID); ok {
+		tmp.PauseID = podID
+	}
 
-	if len(tmp.Containers) == 0 && tmp.IP == "" {
+	if len(tmp.Containers) == 0 && tmp.IP == "" && tmp.PauseID == "" {
 		// Even without runtime/cni artifacts, DNAT rules may remain after partial failure.
 		s.cleanupHostPortPublish(tmp)
 		return nil

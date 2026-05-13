@@ -367,9 +367,9 @@ Note:
 }
 ```
 
-# Example (Wordpress)
+# Example Create Payload (Wordpress)
 
-```yaml
+```json
 {
     'id': 'sbx-wordpress-demo',
     'egress': true,

@@ -18,13 +18,8 @@ import (
 )
 
 func (s *Service) createPodSandboxCRI(ctx context.Context, sbx *model.Sandbox) (string, string, *runtimeapi.PodSandboxConfig, error) {
-	if pods, err := s.cri.listPodSandboxes(ctx); err == nil {
-		for _, p := range pods {
-			md := p.GetMetadata()
-			if md != nil && md.GetName() == sbx.ID {
-				s.cri.stopAndRemovePodSandbox(ctx, p.GetId())
-			}
-		}
+	if podID, ok := s.findManagedPodSandboxID(ctx, sbx.ID); ok {
+		s.cri.stopAndRemovePodSandbox(ctx, podID)
 	}
 
 	cfg := &runtimeapi.PodSandboxConfig{
@@ -164,6 +159,31 @@ func (s *Service) listCRISandboxIDs(ctx context.Context) ([]string, error) {
 	}
 
 	return ids, nil
+}
+
+func (s *Service) findManagedPodSandboxID(ctx context.Context, sandboxID string) (string, bool) {
+	items, err := s.cri.listPodSandboxes(ctx)
+	if err != nil {
+		return "", false
+	}
+
+	for _, it := range items {
+		if it.GetId() == "" {
+			continue
+		}
+
+		labels := it.GetLabels()
+		if labels["sandbox-id"] == sandboxID {
+			return it.GetId(), true
+		}
+
+		md := it.GetMetadata()
+		if md != nil && md.GetUid() == sandboxID && md.GetName() == sandboxID {
+			return it.GetId(), true
+		}
+	}
+
+	return "", false
 }
 
 func (s *Service) deleteSandboxFromState(ctx context.Context, sbx *model.Sandbox) error {
