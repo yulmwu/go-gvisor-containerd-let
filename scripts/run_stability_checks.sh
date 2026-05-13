@@ -2,7 +2,6 @@
 set -euo pipefail
 
 API_BASE="${API_BASE:-http://127.0.0.1:8080}"
-NS="${SANDBOX_NAMESPACE:-sandbox-demo}"
 CTR_ADDR="${SANDBOX_CONTAINERD_ADDRESS:-/run/containerd/containerd.sock}"
 HOST_IP="${HOST_IP:-$(hostname -I | awk '{print $1}')}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-60}"
@@ -14,7 +13,7 @@ fail() { echo "[fail] $*"; FAILS+=("$*"); }
 
 need curl
 need jq
-need ctr
+need crictl
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "[fatal] run as root (example: sudo -E ./scripts/run_stability_checks.sh)" >&2
@@ -78,6 +77,20 @@ wait_running() {
   return 1
 }
 
+wait_deleted() {
+  local id="$1"
+  local i
+  for i in $(seq 1 "${TIMEOUT_SEC}"); do
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "${API_BASE}/v1/sandboxes/${id}" || true)"
+    if [[ "${code}" == "404" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 sandbox_ip() {
   local id="$1"
   api_get "${id}" | jq -r '.sandbox.ip // ""'
@@ -97,8 +110,8 @@ cat > "${tmpdir}/a.json" <<JSON
   "egress": true,
   "ports": [{"hostPort": ${PORT_A}, "containerPort": 8080, "protocol": "tcp"}],
   "containers": [
-    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo A > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}},
-    {"name":"worker","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}}
+    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo A > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}},
+    {"name":"worker","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}}
   ]
 }
 JSON
@@ -109,8 +122,8 @@ cat > "${tmpdir}/b.json" <<JSON
   "egress": false,
   "ports": [{"hostPort": ${PORT_B}, "containerPort": 8080, "protocol": "tcp"}],
   "containers": [
-    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo B > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}},
-    {"name":"worker","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}}
+    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo B > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}},
+    {"name":"worker","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}}
   ]
 }
 JSON
@@ -121,7 +134,7 @@ cat > "${tmpdir}/one.json" <<JSON
   "egress": true,
   "ports": [],
   "containers": [
-    {"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":67108864,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}
+    {"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"64Mi"}}
   ]
 }
 JSON
@@ -135,8 +148,8 @@ cat > "${tmpdir}/multi.json" <<JSON
     {"hostPort": ${PORT_M2}, "containerPort": 8081, "protocol": "tcp"}
   ],
   "containers": [
-    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo M8080 > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}},
-    {"name":"web2","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www2 && echo M8081 > /tmp/www2/index.html && cd /tmp/www2 && python -m http.server 8081"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}}
+    {"name":"web","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www && echo M8080 > /tmp/www/index.html && cd /tmp/www && python -m http.server 8080"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}},
+    {"name":"web2","image":"python:3.12-alpine","args":["sh","-c","mkdir -p /tmp/www2 && echo M8081 > /tmp/www2/index.html && cd /tmp/www2 && python -m http.server 8081"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}}
   ]
 }
 JSON
@@ -149,7 +162,7 @@ cat > "${tmpdir}/invalid_dup_port.json" <<JSON
     {"hostPort": 31100, "containerPort": 8080, "protocol": "tcp"},
     {"hostPort": 31100, "containerPort": 8081, "protocol": "tcp"}
   ],
-  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":67108864,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}]
+  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"64Mi"}}]
 }
 JSON
 
@@ -158,7 +171,7 @@ cat > "${tmpdir}/invalid_protocol.json" <<JSON
   "id": "sbx-invalid-proto-${SUFFIX}",
   "egress": true,
   "ports": [{"hostPort": 31101, "containerPort": 8080, "protocol": "icmp"}],
-  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":67108864,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}]
+  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"64Mi"}}]
 }
 JSON
 
@@ -167,7 +180,7 @@ cat > "${tmpdir}/invalid_priv_port.json" <<JSON
   "id": "sbx-invalid-priv-${SUFFIX}",
   "egress": true,
   "ports": [{"hostPort": 80, "containerPort": 8080, "protocol": "tcp"}],
-  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":67108864,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}]
+  "containers": [{"name":"main","image":"alpine:3.20","args":["sh","-c","sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"64Mi"}}]
 }
 JSON
 
@@ -176,7 +189,7 @@ cat > "${tmpdir}/invalid_missing_fields.json" <<JSON
   "id": "sbx-invalid-missing-${SUFFIX}",
   "egress": true,
   "ports": [],
-  "containers": [{"name":"","image":"","args":[],"env":[],"workDir":"","limits":{"memoryBytes":67108864,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}]
+  "containers": [{"name":"","image":"","args":[],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"64Mi"}}]
 }
 JSON
 
@@ -186,7 +199,7 @@ cat > "${tmpdir}/nginx.json" <<JSON
   "egress": true,
   "ports": [{"hostPort": ${PORT_N}, "containerPort": 80, "protocol": "tcp"}],
   "containers": [
-    {"name":"web","image":"nginx:alpine","args":[],"env":[],"workDir":"","limits":{"memoryBytes":268435456,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}}
+    {"name":"web","image":"nginx:alpine","args":[],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"256Mi"}}
   ]
 }
 JSON
@@ -197,7 +210,7 @@ cat > "${tmpdir}/ubuntu.json" <<JSON
   "egress": true,
   "ports": [],
   "containers": [
-    {"name":"main","image":"ubuntu:22.04","args":["sh","-c","mkdir -p /tmp/fs && echo ubuntu-ok >/tmp/fs/probe && sleep infinity"],"env":[],"workDir":"","limits":{"memoryBytes":268435456,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":128}}
+    {"name":"main","image":"ubuntu:22.04","args":["sh","-c","mkdir -p /tmp/fs && echo ubuntu-ok >/tmp/fs/probe && sleep infinity"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"256Mi"}}
   ]
 }
 JSON
@@ -208,10 +221,16 @@ cat > "${tmpdir}/busybox.json" <<JSON
   "egress": true,
   "ports": [],
   "containers": [
-    {"name":"main","image":"busybox:1.36","args":["sh","-c","mkdir -p /tmp/fs && echo busybox-ok >/tmp/fs/probe && sleep 3600"],"env":[],"workDir":"","limits":{"memoryBytes":134217728,"cpuQuota":50000,"cpuPeriod":100000,"pidsLimit":64}}
+    {"name":"main","image":"busybox:1.36","args":["sh","-c","mkdir -p /tmp/fs && echo busybox-ok >/tmp/fs/probe && sleep 3600"],"env":[],"workDir":"","resource":{"cpu":"500m","memory":"128Mi"}}
   ]
 }
 JSON
+
+container_id_of() {
+  local id="$1"
+  local name="$2"
+  api_get "${id}" | jq -r ".sandbox.containers[\"${name}\"].id // \"\""
+}
 
 log "validation: one-container request"
 code="$(api_post "${tmpdir}/one.json" | tail -n1)"
@@ -243,7 +262,8 @@ code="$(api_post "${tmpdir}/a.json" | tail -n1)"
 if [[ "${code}" == "400" ]]; then pass "hostPort collision rejected"; else fail "hostPort collision rejected (got ${code})"; fi
 
 log "same sandbox localhost connectivity"
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "same-${SUFFIX}" "${SBX_A}-worker" sh -lc 'wget -qO- http://127.0.0.1:8080 | grep -qx A'; then
+CID_A_WORKER="$(container_id_of "${SBX_A}" "worker")"
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_A_WORKER}" sh -lc 'wget -qO- http://127.0.0.1:8080 | grep -qx A'; then
   pass "same-sandbox localhost communication"
 else
   fail "same-sandbox localhost communication"
@@ -251,19 +271,20 @@ fi
 
 log "cross-sandbox communication block"
 IP_B="$(sandbox_ip "${SBX_B}")"
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "cross-${SUFFIX}" "${SBX_A}-worker" sh -lc "wget -T 2 -qO- http://${IP_B}:8080 >/dev/null"; then
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_A_WORKER}" sh -lc "wget -T 2 -qO- http://${IP_B}:8080 >/dev/null"; then
   fail "cross-sandbox communication blocked"
 else
   pass "cross-sandbox communication blocked"
 fi
 
 log "egress true/false DNS behavior"
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "egt-${SUFFIX}" "${SBX_A}-worker" sh -lc 'wget -T 5 -qO- http://example.com >/dev/null'; then
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_A_WORKER}" sh -lc 'wget -T 5 -qO- http://example.com >/dev/null'; then
   pass "egress=true outbound DNS/http"
 else
   fail "egress=true outbound DNS/http"
 fi
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "egf-${SUFFIX}" "${SBX_B}-worker" sh -lc 'wget -T 3 -qO- http://example.com >/dev/null'; then
+CID_B_WORKER="$(container_id_of "${SBX_B}" "worker")"
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_B_WORKER}" sh -lc 'wget -T 3 -qO- http://example.com >/dev/null'; then
   fail "egress=false outbound blocked"
 else
   pass "egress=false outbound blocked"
@@ -279,6 +300,14 @@ wait_running "${SBX_M}" && pass "multi-port reaches running" || fail "multi-port
 if curl -fsS -m 5 "http://${HOST_IP}:${PORT_M1}" | grep -qx "M8080"; then pass "multi-port hostPort #1"; else fail "multi-port hostPort #1"; fi
 if curl -fsS -m 5 "http://${HOST_IP}:${PORT_M2}" | grep -qx "M8081"; then pass "multi-port hostPort #2"; else fail "multi-port hostPort #2"; fi
 
+log "phase cleanup before heavy image/fs coverage"
+for id in "${SBX_A}" "${SBX_B}" "${SBX_C}" "${SBX_M}"; do
+  curl -fsS -X DELETE "${API_BASE}/v1/sandboxes/${id}" >/dev/null || true
+done
+for id in "${SBX_A}" "${SBX_B}" "${SBX_C}" "${SBX_M}"; do
+  wait_deleted "${id}" && pass "deleted ${id}" || fail "deleted ${id}"
+done
+
 log "image/fs coverage"
 [[ "$(api_post "${tmpdir}/nginx.json" | tail -n1)" == "202" ]] && pass "nginx create accepted" || fail "nginx create accepted"
 [[ "$(api_post "${tmpdir}/ubuntu.json" | tail -n1)" == "202" ]] && pass "ubuntu create accepted" || fail "ubuntu create accepted"
@@ -287,8 +316,10 @@ wait_running "${SBX_N}" && pass "nginx reaches running" || fail "nginx reaches r
 wait_running "${SBX_U}" && pass "ubuntu reaches running" || fail "ubuntu reaches running"
 wait_running "${SBX_Z}" && pass "busybox reaches running" || fail "busybox reaches running"
 if curl -fsS -m 5 "http://${HOST_IP}:${PORT_N}" >/dev/null; then pass "nginx hostPort"; else fail "nginx hostPort"; fi
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "fsu-${SUFFIX}" "${SBX_U}-main" sh -lc 'cat /tmp/fs/probe | grep -qx ubuntu-ok'; then pass "ubuntu fs write/read"; else fail "ubuntu fs write/read"; fi
-if ctr -a "${CTR_ADDR}" -n "${NS}" tasks exec --exec-id "fsb-${SUFFIX}" "${SBX_Z}-main" sh -lc 'cat /tmp/fs/probe | grep -qx busybox-ok'; then pass "busybox fs write/read"; else fail "busybox fs write/read"; fi
+CID_U_MAIN="$(container_id_of "${SBX_U}" "main")"
+CID_Z_MAIN="$(container_id_of "${SBX_Z}" "main")"
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_U_MAIN}" sh -lc 'cat /tmp/fs/probe | grep -qx ubuntu-ok'; then pass "ubuntu fs write/read"; else fail "ubuntu fs write/read"; fi
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" exec "${CID_Z_MAIN}" sh -lc 'cat /tmp/fs/probe | grep -qx busybox-ok'; then pass "busybox fs write/read"; else fail "busybox fs write/read"; fi
 
 log "delete and runtime cleanup"
 for id in "${SBX_A}" "${SBX_B}" "${SBX_C}" "${SBX_M}" "${SBX_U}" "${SBX_Z}" "${SBX_N}"; do
@@ -303,7 +334,7 @@ else
   fail "list empty after cleanup (count=${list_count})"
 fi
 
-if ctr -a "${CTR_ADDR}" -n "${NS}" containers list 2>/dev/null | awk 'NR>1 {print $1}' | rg -q "^sbx-test-"; then
+if crictl --runtime-endpoint "unix://${CTR_ADDR}" pods --name "sbx-test-" -q | grep -q .; then
   fail "runtime containers cleanup"
 else
   pass "runtime containers cleanup"

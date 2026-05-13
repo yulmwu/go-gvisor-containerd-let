@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"example.com/sandbox-demo/internal/model"
+	"sandboxd/internal/model"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type parsedResource struct {
@@ -18,12 +20,12 @@ type parsedResource struct {
 }
 
 func parseContainerResource(in model.ResourceSpec) (parsedResource, error) {
-	cpuMilli, err := model.ParseCPUMilli(in.CPU)
+	cpuMilli, err := parseCPUMilli(in.CPU)
 	if err != nil {
 		return parsedResource{}, err
 	}
 
-	memBytes, err := model.ParseMemoryBytes(in.Memory)
+	memBytes, err := parseMemoryBytes(in.Memory)
 	if err != nil {
 		return parsedResource{}, err
 	}
@@ -31,12 +33,47 @@ func parseContainerResource(in model.ResourceSpec) (parsedResource, error) {
 	return parsedResource{CPUMilli: cpuMilli, MemoryBytes: memBytes}, nil
 }
 
+func parseCPUMilli(raw string) (int64, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return 0, fmt.Errorf("cpu is required")
+	}
+
+	q, err := resource.ParseQuantity(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid cpu: %s", raw)
+	}
+
+	milli := q.MilliValue()
+	if milli <= 0 {
+		return 0, fmt.Errorf("invalid cpu: %s", raw)
+	}
+
+	return milli, nil
+}
+
+func parseMemoryBytes(raw string) (int64, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return 0, fmt.Errorf("memory is required")
+	}
+
+	q, err := resource.ParseQuantity(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid memory: %s", raw)
+	}
+
+	bytes := q.Value()
+	if bytes <= 0 {
+		return 0, fmt.Errorf("invalid memory: %s", raw)
+	}
+
+	return bytes, nil
+}
+
 func parsedResourceToLimits(r parsedResource) model.ResourceLimits {
 	const period = uint64(100000)
-	quota := (r.CPUMilli * int64(period)) / 1000
-	if quota < 1000 {
-		quota = 1000
-	}
+	quota := max((r.CPUMilli*int64(period))/1000, 1000)
 
 	return model.ResourceLimits{
 		MemoryBytes: r.MemoryBytes,

@@ -8,11 +8,12 @@ set -euo pipefail
 #   sudo ./scripts/force_cleanup.sh <sandbox-id> [namespace] [containerd-socket]
 #
 # Example:
-#   sudo ./scripts/force_cleanup.sh sbx-example-123 sandbox-demo /run/containerd/containerd.sock
+#   sudo ./scripts/force_cleanup.sh sbx-example-123 k8s.io /run/containerd/containerd.sock
 
 SID="${1:-}"
-NS="${2:-sandbox-demo}"
+NS="${2:-k8s.io}"
 ADDR="${3:-/run/containerd/containerd.sock}"
+CRI_ENDPOINT="unix://${ADDR}"
 
 if [[ -z "$SID" ]]; then
   echo "usage: $0 <sandbox-id> [namespace] [containerd-socket]" >&2
@@ -21,17 +22,24 @@ fi
 
 echo "[cleanup] sandbox-id=$SID namespace=$NS addr=$ADDR"
 
-# 1) Delete tasks first, then containers (only those prefixed with "<sid>-")
-echo "[cleanup] removing tasks"
+# 1) Remove CRI pod sandbox by pod name first.
+if command -v crictl >/dev/null 2>&1; then
+  echo "[cleanup] removing cri pod sandboxes by name"
+  crictl --runtime-endpoint "$CRI_ENDPOINT" pods --name "$SID" -q 2>/dev/null | while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    echo "  - stopp $pid"
+    crictl --runtime-endpoint "$CRI_ENDPOINT" stopp "$pid" >/dev/null 2>&1 || true
+    echo "  - rmp $pid"
+    crictl --runtime-endpoint "$CRI_ENDPOINT" rmp "$pid" >/dev/null 2>&1 || true
+  done
+fi
+
+# Fallback cleanup for any old direct-mode artifacts.
+echo "[cleanup] removing legacy direct tasks/containers"
 ctr -a "$ADDR" -n "$NS" tasks list 2>/dev/null | awk -v s="$SID-" 'NR>1 && index($1, s)==1 {print $1}' | while read -r id; do
-  echo "  - task rm -f $id"
   ctr -a "$ADDR" -n "$NS" tasks rm -f "$id" || true
 done
-
-echo "[cleanup] removing containers"
 ctr -a "$ADDR" -n "$NS" containers list 2>/dev/null | awk -v s="$SID-" 'NR>1 && index($1, s)==1 {print $1}' | while read -r id; do
-  echo "  - container rm --keep-snapshot $id"
-  # keep snapshot to guarantee metadata/container removal even on partial failures.
   ctr -a "$ADDR" -n "$NS" containers rm --keep-snapshot "$id" || true
 done
 

@@ -9,9 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	httpserver "example.com/sandbox-demo/internal/http"
-	"example.com/sandbox-demo/internal/sandbox"
 	"github.com/joho/godotenv"
+	"sandboxd/internal/config"
+	httpserver "sandboxd/internal/http"
+	"sandboxd/internal/sandbox"
 )
 
 func main() {
@@ -20,11 +21,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := sandbox.DefaultConfig()
-	if v := os.Getenv("SANDBOX_NAMESPACE"); v != "" {
-		cfg.Namespace = v
-	}
-
+	cfg := config.DefaultConfig()
 	if v := os.Getenv("SANDBOX_STATE_BASE_DIR"); v != "" {
 		cfg.StateBaseDir = v
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"sandboxd/internal/config"
 )
 
 func (s *Service) acquireSandboxLock(sandboxID string) (func(), error) {
@@ -20,7 +21,7 @@ func (s *Service) acquireSandboxLock(sandboxID string) (func(), error) {
 		return func() {}, err
 	}
 
-	deadline := time.Now().Add(DefaultLockWaitTimeout)
+	deadline := time.Now().Add(config.DefaultLockWaitTimeout)
 	for {
 		if err := unix.Flock(int(fd.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
 			return func() {

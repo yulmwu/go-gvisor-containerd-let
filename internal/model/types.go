@@ -13,26 +13,24 @@ type Sandbox struct {
 	Egress      bool                      `json:"egress"`
 	Ports       []PortMapping             `json:"ports,omitempty"`
 	Containers  map[string]ContainerState `json:"containers"`
+	PauseID     string                    `json:"pauseID,omitempty"`
 	CNIConfPath string                    `json:"cniConfPath"`
 	CreatedAt   time.Time                 `json:"createdAt"`
 	UpdatedAt   time.Time                 `json:"updatedAt"`
 }
 
 type ContainerState struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Phase       string       `json:"phase"`
-	Error       string       `json:"error,omitempty"`
-	Image       string       `json:"image"`
-	Args        []string     `json:"args,omitempty"`
-	Env         []string     `json:"env,omitempty"`
-	Resource    ResourceSpec `json:"resource,omitempty"`
-	SnapshotKey string       `json:"snapshotKey"`
-	TaskPID     uint32       `json:"taskPID"`
-	Runtime     string       `json:"runtime"`
-	TaskStatus  string       `json:"taskStatus,omitempty"`
-	ExitStatus  uint32       `json:"exitStatus,omitempty"`
-	ExitTime    string       `json:"exitTime,omitempty"`
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	Phase      string       `json:"phase"`
+	Error      string       `json:"error,omitempty"`
+	Image      string       `json:"image"`
+	Args       []string     `json:"args,omitempty"`
+	Env        []string     `json:"env,omitempty"`
+	Resource   ResourceSpec `json:"resource"`
+	TaskPID    uint32       `json:"taskPID"`
+	Runtime    string       `json:"runtime"`
+	TaskStatus string       `json:"taskStatus,omitempty"`
 }
 
 type CreateSandboxRequest struct {

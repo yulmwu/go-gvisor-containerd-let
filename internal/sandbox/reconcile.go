@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"example.com/sandbox-demo/internal/model"
-	"example.com/sandbox-demo/internal/network"
+	"sandboxd/internal/model"
+	"sandboxd/internal/network"
+
 	"github.com/containerd/containerd/v2/pkg/namespaces"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // ReconcileOnce aligns state with runtime/network.
@@ -25,16 +27,6 @@ func (s *Service) ReconcileOnce(ctx context.Context) error {
 	stateMap := map[string]*model.Sandbox{}
 	for _, sbx := range stateList {
 		stateMap[sbx.ID] = sbx
-	}
-
-	runtimeIDs, err := s.ListRuntimeSandboxIDs(ctx)
-	if err != nil {
-		return err
-	}
-
-	runtimeSet := map[string]struct{}{}
-	for _, id := range runtimeIDs {
-		runtimeSet[id] = struct{}{}
 	}
 
 	for _, sbx := range stateList {
@@ -60,7 +52,14 @@ func (s *Service) ReconcileOnce(ctx context.Context) error {
 			continue
 		}
 
-		if _, ok := runtimeSet[sbx.ID]; !ok {
+		exists := false
+		if sbx.PauseID != "" {
+			if _, err := s.cri.podSandboxStatus(ctx, sbx.PauseID); err == nil {
+				exists = true
+			}
+		}
+
+		if !exists {
 			if s.shouldFinalizeUnhealthy(sbx.ID) {
 				s.dbg("reconcile finalize missing runtime sandbox=%s", sbx.ID)
 				_ = s.deleteSandboxFromState(ctx, sbx)
@@ -85,21 +84,8 @@ func (s *Service) ReconcileOnce(ctx context.Context) error {
 			}
 			continue
 		}
+
 		s.clearUnhealthy(sbx.ID)
-	}
-
-	for _, runtimeID := range runtimeIDs {
-		if _, ok := stateMap[runtimeID]; ok {
-			continue
-		}
-		// Create/Delete holds an exclusive sandbox lock. If locked, skip orphan
-		// cleanup this round to avoid racing in-flight lifecycle operations.
-		if s.isSandboxLockHeld(runtimeID) {
-			continue
-		}
-
-		s.dbg("reconcile cleanup orphan runtime sandbox=%s", runtimeID)
-		_ = s.cleanupOrphanRuntimeSandbox(ctx, runtimeID)
 	}
 
 	keep := map[string]struct{}{}
@@ -107,12 +93,8 @@ func (s *Service) ReconcileOnce(ctx context.Context) error {
 		keep[sbx.ID] = struct{}{}
 	}
 
-	for _, id := range runtimeIDs {
-		keep[id] = struct{}{}
-	}
-
 	network.DeleteOrphanHostPortDNAT(s.ipt, keep)
-	s.dbg("reconcile done state=%d runtime=%d", len(stateList), len(runtimeIDs))
+	s.dbg("reconcile done state=%d", len(stateList))
 
 	return nil
 }
@@ -136,22 +118,33 @@ func (s *Service) StartReconcileLoop(ctx context.Context) {
 
 func (s *Service) ListRuntimeSandboxIDs(ctx context.Context) ([]string, error) {
 	ctx = namespaces.WithNamespace(ctx, s.namespace)
-	containers, err := s.client.Containers(ctx)
+	pods, err := s.listCRISandboxIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	ids := map[string]struct{}{}
-	for _, c := range containers {
-		id := c.ID()
-		if !strings.HasPrefix(id, "sbx-") {
+	for _, id := range pods {
+		if id == "" {
 			continue
 		}
-		sep := strings.LastIndex(id, "-")
-		if sep <= 0 {
+
+		st, err := s.cri.podSandboxStatus(ctx, id)
+		if err != nil {
 			continue
 		}
-		ids[id[:sep]] = struct{}{}
+
+		md := st.GetMetadata()
+		if md != nil && (strings.HasPrefix(md.GetUid(), "sbx-") || strings.HasPrefix(md.GetName(), "sbx-")) {
+			sbxID := strings.TrimSpace(md.GetUid())
+			if sbxID == "" {
+				sbxID = strings.TrimSpace(md.GetName())
+			}
+
+			if sbxID != "" {
+				ids[sbxID] = struct{}{}
+			}
+		}
 	}
 
 	out := make([]string, 0, len(ids))
@@ -171,7 +164,8 @@ func (s *Service) IsSandboxHealthy(ctx context.Context, sandboxID string) (bool,
 	}
 
 	for _, st := range sbx.Containers {
-		if !s.isContainerRunning(ctx, st.ID) {
+		details, err := s.cri.containerStatus(ctx, st.ID)
+		if err != nil || details.State != runtimeapi.ContainerState_CONTAINER_RUNNING {
 			return false, nil
 		}
 	}
@@ -194,20 +188,12 @@ func (s *Service) CleanupSandboxResources(ctx context.Context, sandboxID string)
 }
 
 func (s *Service) cleanupOrphanRuntimeSandbox(ctx context.Context, sandboxID string) error {
-	containers, err := s.client.Containers(ctx)
-	if err != nil {
-		return err
-	}
-
 	tmp := &model.Sandbox{ID: sandboxID, Namespace: s.namespace, IP: s.sandboxIPFromCNICache(sandboxID), BridgeName: s.bridgeIF, Containers: map[string]model.ContainerState{}}
-	for _, c := range containers {
-		id := c.ID()
-		if strings.HasPrefix(id, sandboxID+"-") {
-			tmp.Containers[id] = model.ContainerState{ID: id}
-		}
+	if podID, ok := s.findManagedPodSandboxID(ctx, sandboxID); ok {
+		tmp.PauseID = podID
 	}
 
-	if len(tmp.Containers) == 0 && tmp.IP == "" {
+	if len(tmp.Containers) == 0 && tmp.IP == "" && tmp.PauseID == "" {
 		// Even without runtime/cni artifacts, DNAT rules may remain after partial failure.
 		s.cleanupHostPortPublish(tmp)
 		return nil
@@ -226,22 +212,8 @@ func (s *Service) sandboxIPFromCNICache(sandboxID string) string {
 }
 
 func (s *Service) isContainerRunning(ctx context.Context, id string) bool {
-	ctr, err := s.client.LoadContainer(ctx, id)
-	if err != nil {
-		return false
-	}
-
-	task, err := ctr.Task(ctx, nil)
-	if err != nil {
-		return false
-	}
-
-	status, err := task.Status(ctx)
-	if err != nil {
-		return false
-	}
-
-	return string(status.Status) == "running"
+	details, err := s.cri.containerStatus(ctx, id)
+	return err == nil && details.State == runtimeapi.ContainerState_CONTAINER_RUNNING
 }
 
 func (s *Service) shouldFinalizeUnhealthy(sandboxID string) bool {

@@ -3,7 +3,7 @@ package httpserver
 import (
 	"net/http"
 
-	"example.com/sandbox-demo/internal/sandbox"
+	"sandboxd/internal/sandbox"
 )
 
 type Server struct {

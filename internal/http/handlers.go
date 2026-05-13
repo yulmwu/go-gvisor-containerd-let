@@ -8,8 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"example.com/sandbox-demo/internal/model"
-	"example.com/sandbox-demo/internal/sandbox"
+	"sandboxd/internal/model"
+	"sandboxd/internal/sandbox"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -123,6 +124,7 @@ func (s *Server) getContainerLogs(c *gin.Context) {
 					return
 				}
 			}
+
 			respondErrorMessage(c, http.StatusNotFound, "logs not found")
 			return
 		}

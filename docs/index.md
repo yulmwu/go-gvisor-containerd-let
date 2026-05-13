@@ -78,7 +78,7 @@ Base URL: `http://localhost:8080`
     "sandbox": {
         "id": "sbx-http-demo",
         "phase": "creating",
-        "namespace": "sandbox-demo",
+        "namespace": "k8s.io",
         "ip": "",
         "subnetCIDR": "10.89.0.0/16",
         "bridgeName": "sbx-br0",
@@ -105,9 +105,8 @@ Base URL: `http://localhost:8080`
                     "cpu": "250m",
                     "memory": "256Mi"
                 },
-                "snapshotKey": "",
                 "taskPID": 0,
-                "runtime": "runc"
+                "runtime": "runsc"
             },
             "worker": {
                 "id": "sbx-http-demo-worker",
@@ -119,12 +118,11 @@ Base URL: `http://localhost:8080`
                     "cpu": "100m",
                     "memory": "128Mi"
                 },
-                "snapshotKey": "",
                 "taskPID": 0,
-                "runtime": "runc"
+                "runtime": "runsc"
             }
         },
-        "cniConfPath": "/etc/cni/net.d/20-sbxnet.conflist",
+        "cniConfPath": "/etc/cni/sandboxd.d/20-sbxnet.conflist",
         "createdAt": "2026-05-08T11:00:00Z",
         "updatedAt": "2026-05-08T11:00:00Z"
     },
@@ -179,7 +177,7 @@ Base URL: `http://localhost:8080`
         {
             "id": "sbx-http-demo",
             "phase": "running",
-            "namespace": "sandbox-demo",
+            "namespace": "k8s.io",
             "ip": "10.89.0.18",
             "subnetCIDR": "10.89.0.0/16",
             "bridgeName": "sbx-br0",
@@ -201,13 +199,12 @@ Base URL: `http://localhost:8080`
                         "cpu": "250m",
                         "memory": "256Mi"
                     },
-                    "snapshotKey": "sbx-http-demo-web-snapshot",
                     "taskPID": 12345,
-                    "runtime": "runc",
+                    "runtime": "runsc",
                     "taskStatus": "running"
                 }
             },
-            "cniConfPath": "/etc/cni/net.d/20-sbxnet.conflist",
+            "cniConfPath": "/etc/cni/sandboxd.d/20-sbxnet.conflist",
             "createdAt": "2026-05-08T11:00:00Z",
             "updatedAt": "2026-05-08T11:00:12Z"
         }
@@ -232,7 +229,7 @@ Base URL: `http://localhost:8080`
     "sandbox": {
         "id": "sbx-http-demo",
         "phase": "running",
-        "namespace": "sandbox-demo",
+        "namespace": "k8s.io",
         "ip": "10.89.0.18",
         "subnetCIDR": "10.89.0.0/16",
         "bridgeName": "sbx-br0",
@@ -259,9 +256,8 @@ Base URL: `http://localhost:8080`
                     "cpu": "250m",
                     "memory": "256Mi"
                 },
-                "snapshotKey": "sbx-http-demo-web-snapshot",
                 "taskPID": 12345,
-                "runtime": "runc",
+                "runtime": "runsc",
                 "taskStatus": "running"
             },
             "worker": {
@@ -274,13 +270,12 @@ Base URL: `http://localhost:8080`
                     "cpu": "100m",
                     "memory": "128Mi"
                 },
-                "snapshotKey": "sbx-http-demo-worker-snapshot",
                 "taskPID": 12346,
-                "runtime": "runc",
+                "runtime": "runsc",
                 "taskStatus": "running"
             }
         },
-        "cniConfPath": "/etc/cni/net.d/20-sbxnet.conflist",
+        "cniConfPath": "/etc/cni/sandboxd.d/20-sbxnet.conflist",
         "createdAt": "2026-05-08T11:00:00Z",
         "updatedAt": "2026-05-08T11:00:12Z"
     },
@@ -300,6 +295,7 @@ Base URL: `http://localhost:8080`
     - `500 Internal Server Error` (log file read I/O failure)
 
 Note:
+
 - If the container exists but the log file is not created yet, the API returns `200` with `lines: []`.
 
 **Response**
@@ -368,5 +364,46 @@ Note:
 ```json
 {
     "error": "error message"
+}
+```
+
+# Example Create Payload (Wordpress)
+
+```json
+{
+    'id': 'sbx-wordpress-demo',
+    'egress': true,
+    'ports': [{ 'hostPort': 30080, 'containerPort': 80, 'protocol': 'tcp' }],
+    'containers':
+        [
+            {
+                'name': 'wordpress',
+                'image': 'wordpress:6.9.4-php8.3-apache',
+                'args': [],
+                'env':
+                    [
+                        'WORDPRESS_DB_HOST=127.0.0.1:3306',
+                        'WORDPRESS_DB_USER=wordpress',
+                        'WORDPRESS_DB_PASSWORD=wordpress-pass',
+                        'WORDPRESS_DB_NAME=wordpress',
+                    ],
+                'workDir': '',
+                'resource': { 'cpu': '200m', 'memory': '512Mi' },
+            },
+            {
+                'name': 'mysql',
+                'image': 'mysql:8.4',
+                'args': [],
+                'env':
+                    [
+                        'MYSQL_DATABASE=wordpress',
+                        'MYSQL_USER=wordpress',
+                        'MYSQL_PASSWORD=wordpress-pass',
+                        'MYSQL_ROOT_PASSWORD=root-pass',
+                    ],
+                'workDir': '',
+                'resource': { 'cpu': '200m', 'memory': '768Mi' },
+            },
+        ],
 }
 ```

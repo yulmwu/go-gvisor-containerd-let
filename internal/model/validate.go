@@ -20,12 +20,12 @@ func (r CreateSandboxRequest) Validate() error {
 			return fmt.Errorf("container name and image are required")
 		}
 
-		if _, err := ParseCPUMilli(c.Resource.CPU); err != nil {
-			return fmt.Errorf("container %s: %w", c.Name, err)
+		if strings.TrimSpace(c.Resource.CPU) == "" {
+			return fmt.Errorf("container %s: cpu is required", c.Name)
 		}
 
-		if _, err := ParseMemoryBytes(c.Resource.Memory); err != nil {
-			return fmt.Errorf("container %s: %w", c.Name, err)
+		if strings.TrimSpace(c.Resource.Memory) == "" {
+			return fmt.Errorf("container %s: memory is required", c.Name)
 		}
 
 		if _, ok := seenNames[c.Name]; ok {

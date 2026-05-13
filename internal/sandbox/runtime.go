@@ -1,170 +1,189 @@
 package sandbox
 
 import (
+	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
-	"example.com/sandbox-demo/internal/model"
-	"example.com/sandbox-demo/internal/network"
-	runcoptions "github.com/containerd/containerd/api/types/runc/options"
-	containerd "github.com/containerd/containerd/v2/client"
-	seccomp "github.com/containerd/containerd/v2/contrib/seccomp"
-	"github.com/containerd/containerd/v2/pkg/cio"
-	"github.com/containerd/containerd/v2/pkg/oci"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"sandboxd/internal/config"
+	"sandboxd/internal/model"
+	"sandboxd/internal/network"
+
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-func (s *Service) createContainer(ctx context.Context, sandboxID, id, name, image string, args, env []string, workDir string, lim model.ResourceLimits, resource model.ResourceSpec, netnsPath string) (model.ContainerState, error) {
-	s.dbg("container create call id=%s image=%s", id, image)
-	ref := normalizeImage(image)
-
-	baseSpecOpts := []oci.SpecOpts{
-		seccomp.WithDefaultProfile(),
-		oci.WithHostHostsFile,
-		s.withSandboxResolvConf(),
-		oci.WithMaskedPaths([]string{"/proc/acpi", "/proc/kcore", "/proc/keys", "/proc/timer_list", "/sys/firmware"}),
-		oci.WithReadonlyPaths([]string{"/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"}),
-		oci.WithMemoryLimit(uint64(lim.MemoryBytes)),
-		oci.WithPidsLimit(lim.PidsLimit),
-		oci.WithCPUCFS(lim.CPUQuota, lim.CPUPeriod),
+func (s *Service) createPodSandboxCRI(ctx context.Context, sbx *model.Sandbox) (string, string, *runtimeapi.PodSandboxConfig, error) {
+	if podID, ok := s.findManagedPodSandboxID(ctx, sbx.ID); ok {
+		s.cri.stopAndRemovePodSandbox(ctx, podID)
 	}
 
-	if len(args) > 0 {
-		baseSpecOpts = append(baseSpecOpts, oci.WithProcessArgs(args...))
+	cfg := &runtimeapi.PodSandboxConfig{
+		Metadata: &runtimeapi.PodSandboxMetadata{
+			Name:      sbx.ID,
+			Namespace: "default",
+			Uid:       sbx.ID,
+			Attempt:   1,
+		},
+		Hostname:     sbx.ID,
+		LogDirectory: fmt.Sprintf("%s/%s/logs", s.cfg.StateBaseDir, sbx.ID),
+		Labels: map[string]string{
+			"sandbox-id": sbx.ID,
+		},
+		Linux: &runtimeapi.LinuxPodSandboxConfig{
+			SecurityContext: &runtimeapi.LinuxSandboxSecurityContext{},
+		},
 	}
 
-	if len(env) > 0 {
-		baseSpecOpts = append(baseSpecOpts, oci.WithEnv(env))
+	cfg.DnsConfig = &runtimeapi.DNSConfig{
+		Servers: sandboxDNSServers(),
 	}
 
-	if workDir != "" {
-		baseSpecOpts = append(baseSpecOpts, oci.WithProcessCwd(workDir))
-	}
-
-	if netnsPath != "" {
-		baseSpecOpts = append(baseSpecOpts, oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.NetworkNamespace, Path: netnsPath}))
-	}
-
-	const snapshotter = "overlayfs"
-	const runtimeName = "io.containerd.runc.v2"
-	runtimeOpts := &runcoptions.Options{BinaryName: s.runtimeBinary}
-
-	img, err := s.client.GetImage(ctx, ref)
+	podID, err := s.cri.runPodSandbox(ctx, cfg, s.runtimeBinary)
 	if err != nil {
-		img, err = s.client.Pull(ctx, ref, containerd.WithPullSnapshotter(snapshotter))
-		if err != nil {
-			return model.ContainerState{}, fmt.Errorf("pull image %q: %w", ref, err)
-		}
+		return "", "", nil, err
 	}
 
-	if err := img.Unpack(ctx, snapshotter); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already exists") {
-		return model.ContainerState{}, fmt.Errorf("unpack image %q with snapshotter %q: %w", ref, snapshotter, err)
+	status, err := s.cri.podSandboxStatus(ctx, podID)
+	if err != nil {
+		return "", "", nil, err
 	}
 
-	specOpts := append([]oci.SpecOpts{oci.WithImageConfig(img)}, baseSpecOpts...)
-	snap := id + "-snapshot"
-
-	for attempt := 1; attempt <= 4; attempt++ {
-		s.dbg("container create attempt id=%s snapshotter=%s runtime=%s attempt=%d", id, snapshotter, runtimeName, attempt)
-		ctr, err := s.client.NewContainer(ctx, id,
-			containerd.WithImage(img),
-			containerd.WithSnapshotter(snapshotter),
-			containerd.WithNewSnapshot(snap, img),
-			containerd.WithRuntime(runtimeName, runtimeOpts),
-			containerd.WithNewSpec(specOpts...),
-		)
-
-		if err != nil {
-			return model.ContainerState{}, fmt.Errorf("new container %q: %w", id, err)
-		}
-
-		logPath, err := s.containerLogPath(sandboxID, name)
-		if err != nil {
-			_ = ctr.Delete(ctx)
-			return model.ContainerState{}, fmt.Errorf("invalid log path: %w", err)
-		}
-
-		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
-			_ = ctr.Delete(ctx)
-			return model.ContainerState{}, fmt.Errorf("create log directory: %w", err)
-		}
-
-		task, err := ctr.NewTask(ctx, cio.LogFile(logPath))
-		if err != nil {
-			_ = ctr.Delete(ctx)
-			if isTransientRuntimeErr(err) {
-				time.Sleep(time.Duration(120*attempt) * time.Millisecond)
-				continue
-			}
-
-			return model.ContainerState{}, fmt.Errorf("new task %q: %w", id, err)
-		}
-
-		if err := task.Start(ctx); err != nil {
-			_, _ = task.Delete(ctx, containerd.WithProcessKill)
-			_ = ctr.Delete(ctx)
-			if isTransientRuntimeErr(err) {
-				time.Sleep(time.Duration(120*attempt) * time.Millisecond)
-				continue
-			}
-
-			return model.ContainerState{}, fmt.Errorf("start task %q: %w", id, err)
-		}
-
-		s.dbg("container create success id=%s pid=%d", id, task.Pid())
-		return model.ContainerState{ID: id, Name: name, Phase: ContainerPhaseRunning, Image: ref, Args: args, Env: env, Resource: resource, SnapshotKey: snap, TaskPID: task.Pid(), Runtime: s.runtimeBinary, TaskStatus: "running"}, nil
-	}
-
-	return model.ContainerState{}, fmt.Errorf("start task %q: exceeded retry attempts", id)
+	return podID, status.GetNetwork().GetIp(), cfg, nil
 }
 
-func isTransientRuntimeErr(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "cannot start a container that has stopped") || strings.Contains(msg, "failed to dial") || strings.Contains(msg, "connection refused")
+func (s *Service) createAndStartCRIContainer(ctx context.Context, sbx *model.Sandbox, podID string, sbxCfg *runtimeapi.PodSandboxConfig, c model.CreateContainerRequest, lim model.ResourceLimits) (model.ContainerState, error) {
+	envs := make([]*runtimeapi.KeyValue, 0, len(c.Env))
+	for _, kv := range c.Env {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		envs = append(envs, &runtimeapi.KeyValue{Key: parts[0], Value: parts[1]})
+	}
+
+	ctrCfg := &runtimeapi.ContainerConfig{
+		Metadata: &runtimeapi.ContainerMetadata{Name: c.Name},
+		Image:    &runtimeapi.ImageSpec{Image: normalizeImage(c.Image)},
+		Command:  c.Args,
+		Envs:     envs,
+		LogPath:  c.Name + ".log",
+		Labels: map[string]string{
+			"sandbox-id": sbx.ID,
+			"container":  c.Name,
+		},
+		Linux: &runtimeapi.LinuxContainerConfig{
+			Resources: &runtimeapi.LinuxContainerResources{
+				MemoryLimitInBytes: lim.MemoryBytes,
+				CpuPeriod:          int64(lim.CPUPeriod),
+				CpuQuota:           lim.CPUQuota,
+				Unified:            map[string]string{"pids.max": fmt.Sprintf("%d", lim.PidsLimit)},
+			},
+			SecurityContext: &runtimeapi.LinuxContainerSecurityContext{
+				Privileged:     false,
+				ReadonlyRootfs: false,
+				NoNewPrivs:     true,
+				Seccomp: &runtimeapi.SecurityProfile{
+					ProfileType: runtimeapi.SecurityProfile_RuntimeDefault,
+				},
+				MaskedPaths: []string{
+					"/proc/acpi",
+					"/proc/kcore",
+					"/proc/keys",
+					"/proc/timer_list",
+					"/sys/firmware",
+				},
+				ReadonlyPaths: []string{
+					"/proc/bus",
+					"/proc/fs",
+					"/proc/irq",
+					"/proc/sys",
+					"/proc/sysrq-trigger",
+				},
+			},
+		},
+	}
+	if c.WorkDir != "" {
+		ctrCfg.WorkingDir = c.WorkDir
+	}
+
+	containerID, err := s.cri.createContainer(ctx, podID, ctrCfg, sbxCfg)
+	if err != nil {
+		return model.ContainerState{}, err
+	}
+
+	if err := s.cri.startContainer(ctx, containerID); err != nil {
+		return model.ContainerState{}, err
+	}
+
+	details, err := s.cri.containerStatus(ctx, containerID)
+	if err != nil {
+		return model.ContainerState{}, err
+	}
+
+	return model.ContainerState{
+		ID:         details.ID,
+		Name:       c.Name,
+		Phase:      ContainerPhaseRunning,
+		Image:      normalizeImage(c.Image),
+		Args:       c.Args,
+		Env:        c.Env,
+		Resource:   c.Resource,
+		TaskPID:    details.PID,
+		Runtime:    s.runtimeBinary,
+		TaskStatus: "running",
+	}, nil
 }
 
-func (s *Service) stopAndDeleteContainer(ctx context.Context, id string) error {
-	ctr, err := s.client.LoadContainer(ctx, id)
+func (s *Service) stopAndDeleteCRISandbox(ctx context.Context, podID string) {
+	s.cri.stopAndRemovePodSandbox(ctx, podID)
+}
+
+func (s *Service) listCRISandboxIDs(ctx context.Context) ([]string, error) {
+	items, err := s.cri.listPodSandboxes(ctx)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			return nil
-		}
-
-		return err
+		return nil, err
 	}
 
-	if task, err := ctr.Task(ctx, nil); err == nil {
-		_, _ = task.Delete(ctx, containerd.WithProcessKill)
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.GetId() == "" {
+			continue
+		}
+		ids = append(ids, it.GetId())
 	}
 
-	if err := ctr.Delete(ctx, containerd.WithSnapshotCleanup); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
-		if strings.Contains(strings.ToLower(err.Error()), "running task") || strings.Contains(strings.ToLower(err.Error()), "failed precondition") {
-			if task, terr := ctr.Task(ctx, nil); terr == nil {
-				_ = task.Kill(ctx, syscall.SIGKILL)
-				_, _ = task.Delete(ctx, containerd.WithProcessKill)
-			}
+	return ids, nil
+}
 
-			if derr := ctr.Delete(ctx, containerd.WithSnapshotCleanup); derr != nil && !strings.Contains(strings.ToLower(derr.Error()), "not found") {
-				return derr
-			}
-
-			return nil
-		}
-
-		if derr := ctr.Delete(ctx); derr == nil || strings.Contains(strings.ToLower(derr.Error()), "not found") {
-			return nil
-		}
-
-		return err
+func (s *Service) findManagedPodSandboxID(ctx context.Context, sandboxID string) (string, bool) {
+	items, err := s.cri.listPodSandboxes(ctx)
+	if err != nil {
+		return "", false
 	}
-	return nil
+
+	for _, it := range items {
+		if it.GetId() == "" {
+			continue
+		}
+
+		labels := it.GetLabels()
+		if labels["sandbox-id"] == sandboxID {
+			return it.GetId(), true
+		}
+
+		md := it.GetMetadata()
+		if md != nil && md.GetUid() == sandboxID && md.GetName() == sandboxID {
+			return it.GetId(), true
+		}
+	}
+
+	return "", false
 }
 
 func (s *Service) deleteSandboxFromState(ctx context.Context, sbx *model.Sandbox) error {
@@ -175,18 +194,16 @@ func (s *Service) deleteSandboxFromState(ctx context.Context, sbx *model.Sandbox
 
 func (s *Service) deleteSandboxRuntimeArtifacts(ctx context.Context, sbx *model.Sandbox) error {
 	s.dbg("cleanup runtime artifacts sandbox=%s", sbx.ID)
-	var errs []error
-	for _, name := range sortedContainerNames(sbx.Containers) {
-		if e := s.stopAndDeleteContainer(ctx, sbx.Containers[name].ID); e != nil {
-			errs = append(errs, e)
-		}
+	if sbx.PauseID != "" {
+		s.stopAndDeleteCRISandbox(ctx, sbx.PauseID)
 	}
 
 	s.cleanupHostPortPublish(sbx)
 	s.cleanupSandboxNetworkPolicy(sbx)
 	s.cleanupSandboxCNI(ctx, sbx.ID)
-	s.dbg("cleanup runtime artifacts done sandbox=%s err_count=%d", sbx.ID, len(errs))
-	return errors.Join(errs...)
+	s.dbg("cleanup runtime artifacts done sandbox=%s", sbx.ID)
+
+	return nil
 }
 
 func (s *Service) cleanupCNICache(sandboxID string) error {
@@ -198,30 +215,8 @@ func (s *Service) cleanupCNICache(sandboxID string) error {
 	return nil
 }
 
-func (s *Service) resolveSandboxIP(ctx context.Context, sandboxID string) (string, error) {
-	deadline := time.Now().Add(12 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("resolve sandbox ip canceled: %w", ctx.Err())
-		default:
-		}
-
-		ip, err := network.LookupSandboxIPv4FromResultCache(sandboxID)
-		if err == nil {
-			return ip, nil
-		}
-
-		lastErr = err
-		time.Sleep(150 * time.Millisecond)
-	}
-
-	if lastErr == nil {
-		lastErr = fmt.Errorf("timeout resolving sandbox ip")
-	}
-
-	return "", lastErr
+func (s *Service) cleanupSandboxCNI(_ context.Context, sandboxID string) {
+	_ = s.cleanupCNICache(sandboxID)
 }
 
 func (s *Service) applySandboxNetworkPolicy(sbx *model.Sandbox) error {
@@ -263,7 +258,17 @@ func (s *Service) refreshSandboxRuntimeState(ctx context.Context, sbx *model.San
 	hasError := false
 	sandboxErr := ""
 	allRunning := true
-	inCreateGrace := sbx.Phase == SandboxPhaseCreating && time.Since(sbx.CreatedAt) < DefaultReadyTimeout
+	if sbx.PauseID != "" {
+		if _, err := s.cri.podSandboxStatus(ctx, sbx.PauseID); err != nil {
+			hasError = true
+			allRunning = false
+			if sandboxErr == "" {
+				sandboxErr = "pause container is not running"
+			}
+		}
+	}
+
+	inCreateGrace := sbx.Phase == SandboxPhaseCreating && time.Since(sbx.CreatedAt) < config.DefaultReadyTimeout
 	for name, st := range sbx.Containers {
 		next := s.fillContainerRuntimeState(ctx, st)
 		if inCreateGrace && next.TaskStatus == "not_found" {
@@ -301,7 +306,7 @@ func (s *Service) refreshSandboxRuntimeState(ctx context.Context, sbx *model.San
 }
 
 func (s *Service) fillContainerRuntimeState(ctx context.Context, st model.ContainerState) model.ContainerState {
-	ctr, err := s.client.LoadContainer(ctx, st.ID)
+	details, err := s.cri.containerStatus(ctx, st.ID)
 	if err != nil {
 		st.TaskStatus = "not_found"
 		st.Phase = ContainerPhaseError
@@ -309,57 +314,27 @@ func (s *Service) fillContainerRuntimeState(ctx context.Context, st model.Contai
 		return st
 	}
 
-	task, err := ctr.Task(ctx, nil)
-	if err != nil {
-		st.TaskStatus = "stopped"
+	st.TaskPID = details.PID
+	switch details.State {
+	case runtimeapi.ContainerState_CONTAINER_RUNNING:
+		st.TaskStatus = "running"
+		st.Phase = ContainerPhaseRunning
+		st.Error = ""
+	case runtimeapi.ContainerState_CONTAINER_CREATED:
+		st.TaskStatus = "created"
+		st.Phase = ContainerPhaseCreating
+		st.Error = ""
+	case runtimeapi.ContainerState_CONTAINER_EXITED, runtimeapi.ContainerState_CONTAINER_UNKNOWN:
+		st.TaskStatus = strings.ToLower(details.State.String())
 		st.Phase = ContainerPhaseStopped
 		st.Error = ""
-		return st
-	}
-
-	status, err := task.Status(ctx)
-	if err != nil {
+	default:
 		st.TaskStatus = "unknown"
 		st.Phase = ContainerPhaseError
-		st.Error = "failed to read task status"
-		return st
+		st.Error = "failed to read container state"
 	}
 
-	st.TaskStatus = string(status.Status)
-	st.Error = ""
-	st.Phase = taskStatusToContainerPhase(st.TaskStatus)
-	st.ExitStatus = status.ExitStatus
-	if !status.ExitTime.IsZero() {
-		st.ExitTime = status.ExitTime.UTC().Format(time.RFC3339)
-	}
-
-	st.TaskPID = task.Pid()
 	return st
-}
-
-func taskStatusToContainerPhase(taskStatus string) string {
-	switch strings.ToLower(taskStatus) {
-	case "running":
-		return ContainerPhaseRunning
-	case "created":
-		return ContainerPhaseCreating
-	case "stopped", "paused", "pausing":
-		return ContainerPhaseStopped
-	case "":
-		return ContainerPhaseUnknown
-	default:
-		return ContainerPhaseError
-	}
-}
-
-func sortedContainerNames(m map[string]model.ContainerState) []string {
-	names := make([]string, 0, len(m))
-	for k := range m {
-		names = append(names, k)
-	}
-
-	sort.Strings(names)
-	return names
 }
 
 func toPublishedPorts(pm []model.PortMapping) []network.PublishedPort {
@@ -392,18 +367,53 @@ func normalizeImage(image string) string {
 	return "docker.io/library/" + image
 }
 
-func (s *Service) withSandboxResolvConf() oci.SpecOpts {
-	src := "/etc/resolv.conf"
-	// On systemd-resolved hosts, /etc/resolv.conf often points to 127.0.0.53,
-	// which is unreachable from isolated netns. Use the uplink resolver list.
-	if _, err := os.Stat("/run/systemd/resolve/resolv.conf"); err == nil {
-		src = "/run/systemd/resolve/resolv.conf"
+var nameserverRe = regexp.MustCompile(`^\s*nameserver\s+([0-9a-fA-F\.:]+)\s*$`)
+
+func sandboxDNSServers() []string {
+	// Prefer uplink resolvers on systemd-resolved hosts to avoid stub
+	// resolver 127.0.0.53 that is unreachable from isolated netns.
+	candidates := []string{
+		"/run/systemd/resolve/resolv.conf",
+		"/etc/resolv.conf",
+	}
+	for _, p := range candidates {
+		servers := parseNameServers(p)
+		if len(servers) > 0 {
+			return servers
+		}
 	}
 
-	return oci.WithMounts([]specs.Mount{{
-		Destination: "/etc/resolv.conf",
-		Type:        "bind",
-		Source:      src,
-		Options:     []string{"rbind", "ro"},
-	}})
+	return nil
+}
+
+func parseNameServers(path string) []string {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	out := make([]string, 0, 3)
+	seen := map[string]struct{}{}
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		m := nameserverRe.FindStringSubmatch(sc.Text())
+		if len(m) != 2 {
+			continue
+		}
+
+		ip := strings.TrimSpace(m[1])
+		// Skip local stub resolvers in sandbox netns.
+		if strings.HasPrefix(ip, "127.") || ip == "::1" {
+			continue
+		}
+
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		out = append(out, ip)
+	}
+
+	return out
 }

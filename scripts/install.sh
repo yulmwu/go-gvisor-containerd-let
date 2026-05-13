@@ -4,7 +4,7 @@ set -euo pipefail
 CNI_VERSION="v1.9.0"
 ARCH="amd64"
 GVISOR_ARCH="x86_64"
-SBX_CNI_CONF_DIR="/etc/cni/net.d"
+SBX_CNI_CONF_DIR="/etc/cni/sandboxd.d"
 SBX_CNI_CONF_FILE="${SBX_CNI_CONF_DIR}/20-sbxnet.conflist"
 
 log() { echo "[install] $*"; }
@@ -72,7 +72,7 @@ install_cni() {
 
   log "Enabling bridge netfilter"
   sudo modprobe br_netfilter
-  cat <<'CONF' | sudo tee /etc/sysctl.d/99-sandbox-demo.conf >/dev/null
+  cat <<'CONF' | sudo tee /etc/sysctl.d/99-sandboxd.conf >/dev/null
 net.bridge.bridge-nf-call-iptables = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 CONF
@@ -121,6 +121,11 @@ version = 2
 
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
   runtime_type = "io.containerd.runc.v2"
+
+[plugins."io.containerd.grpc.v1.cri".cni]
+  bin_dir = "/opt/cni/bin"
+  conf_dir = "/etc/cni/sandboxd.d"
+  max_conf_num = 1
 TOML
 
   sudo systemctl restart containerd
@@ -130,6 +135,10 @@ TOML
 configure_network() {
   log "Writing CNI config (sbxnet)"
   sudo mkdir -p "${SBX_CNI_CONF_DIR}" /var/lib/cni/sbxnet
+  if [[ -f /etc/cni/net.d/20-sbxnet.conflist && ! -f "${SBX_CNI_CONF_FILE}" ]]; then
+    log "Migrating existing CNI conflist from /etc/cni/net.d to ${SBX_CNI_CONF_DIR}"
+    sudo cp /etc/cni/net.d/20-sbxnet.conflist "${SBX_CNI_CONF_FILE}"
+  fi
   cat <<'JSON' | sudo tee "${SBX_CNI_CONF_FILE}" >/dev/null
 {
   "cniVersion": "1.0.0",
@@ -169,11 +178,17 @@ write_runtime_env() {
     else
       echo "SANDBOX_CONTAINERD_ADDRESS=${runtime_addr}" >> .env
     fi
+    if grep -q '^SANDBOX_CNI_CONF_PATH=' .env; then
+      sed -i "s|^SANDBOX_CNI_CONF_PATH=.*|SANDBOX_CNI_CONF_PATH=${SBX_CNI_CONF_FILE}|" .env
+    else
+      echo "SANDBOX_CNI_CONF_PATH=${SBX_CNI_CONF_FILE}" >> .env
+    fi
     sed -i '/^SANDBOX_RUNTIME_PROFILE=/d' .env
     sed -i '/^SANDBOX_SNAPSHOTTER=/d' .env
   else
     cat > .env <<ENV
 SANDBOX_CONTAINERD_ADDRESS=${runtime_addr}
+SANDBOX_CNI_CONF_PATH=${SBX_CNI_CONF_FILE}
 ENV
   fi
 }
