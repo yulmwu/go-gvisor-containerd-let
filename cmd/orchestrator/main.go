@@ -55,6 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 	svc.StartHeartbeatLoop(ctx)
+	svc.StartResourceSyncLoop(ctx)
 
 	router := httpserver.NewRouter(svc, logger)
 	srv := &nethttp.Server{

@@ -87,14 +87,24 @@ func (h *Handler) HeartbeatNode(c *gin.Context) {
 		return
 	}
 
-	err = client.Healthz(c.Request.Context())
-	st, err := client.NodeStatus(c.Request.Context())
+	hbErr := client.Healthz(c.Request.Context())
+	st, stErr := client.NodeStatus(c.Request.Context())
 	status := "ok"
-	if err != nil {
+	if hbErr != nil {
 		status = "failed"
 	}
 
-	c.JSON(http.StatusOK, gin.H{"node": node, "heartbeat": status, "resources": st.Resources, "error": errString(err)})
+	var res any = nil
+	if stErr == nil {
+		res = st.Resources
+	}
+
+	errMsg := errString(hbErr)
+	if errMsg == "" {
+		errMsg = errString(stErr)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"node": node, "heartbeat": status, "resources": res, "error": errMsg})
 }
 
 func (h *Handler) NodeListSandboxes(c *gin.Context) {

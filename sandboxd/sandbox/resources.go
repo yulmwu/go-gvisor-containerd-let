@@ -140,15 +140,9 @@ func (s *Service) NodeResourceSnapshot(ctx context.Context) (model.NodeResourceS
 	allocCPU := hostCPU * int64(s.cfg.MaxAllocPercent) / 100
 	allocMem := hostMem * int64(s.cfg.MaxAllocPercent) / 100
 
-	availCPU := allocCPU - usedCPU
-	if availCPU < 0 {
-		availCPU = 0
-	}
+	availCPU := max(allocCPU-usedCPU, 0)
 
-	availMem := allocMem - usedMem
-	if availMem < 0 {
-		availMem = 0
-	}
+	availMem := max(allocMem-usedMem, 0)
 
 	return model.NodeResourceSnapshot{
 		CapacityCPUMilli:    hostCPU,

@@ -219,6 +219,7 @@ Notes:
 - `ORCH_NODE_PROBE_TIMEOUT` (default: `3s`)
 - `ORCH_HEARTBEAT_PARALLEL` (default: `false`)
 - `ORCH_HEARTBEAT_MAX_PARALLEL` (default: `4`, minimum: `1`)
+- `ORCH_RESOURCE_SYNC_INTERVAL` (default: `30s`)
 - `ORCH_RESOURCE_PERSIST_MIN_INTERVAL` (default: `30s`)
 - `ORCH_RESOURCE_PERSIST_MAX_INTERVAL` (default: `5m`)
 - `ORCH_READY_SUCCESS_THRESHOLD` (default: `2`)
@@ -235,8 +236,3 @@ Notes:
     "error": "error message"
 }
 ```
-
-## Runtime Behavior
-
-- Heartbeat loop uses one unified sandboxd endpoint (`/v1/node/status`) that includes both liveness and resource snapshot.
-- The latest resource snapshot is cached in memory and persisted to DB with interval-based control (`min/max interval`), without CPU/memory delta thresholds.
