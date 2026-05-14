@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"sandboxd-o/pkg/logging"
 	"sandboxd-o/sandboxd/config"
 	httpserver "sandboxd-o/sandboxd/http"
 	"sandboxd-o/sandboxd/sandbox"
@@ -18,6 +21,21 @@ import (
 
 func main() {
 	_ = godotenv.Load()
+
+	logger, err := logging.New(logging.Config{
+		Dir:        strings.TrimSpace(os.Getenv("SANDBOX_LOG_DIR")),
+		FilePrefix: valueOrDefault(strings.TrimSpace(os.Getenv("SANDBOX_LOG_FILE_PREFIX")), "sandboxd"),
+	}, logging.Options{Service: "sandboxd", Env: strings.TrimSpace(os.Getenv("APP_ENV")), AddSource: false})
+	if err != nil {
+		boot := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		boot.Error("sandboxd logging init error", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer logger.Close()
+
+	slog.SetDefault(logger.Logger)
+	log.SetOutput(logger)
+	log.SetFlags(0)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -41,13 +59,14 @@ func main() {
 
 	svc, err := sandbox.New(ctx, cfg)
 	if err != nil {
-		log.Fatalf("init sandbox service: %v", err)
+		logger.Error("init sandbox service error", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	defer svc.Close()
 	svc.StartReconcileLoop(ctx)
 
-	h := httpserver.New(svc).Handler()
+	h := httpserver.New(svc, logger).Handler()
 	addr := ":8080"
 	if v := os.Getenv("HTTP_ADDR"); v != "" {
 		addr = v
@@ -63,6 +82,15 @@ func main() {
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("http server failed: %v", err)
+		logger.Error("http server failed", slog.Any("error", err))
+		os.Exit(1)
 	}
+}
+
+func valueOrDefault(v, def string) string {
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+
+	return v
 }

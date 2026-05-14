@@ -18,6 +18,31 @@ Base URL: `http://localhost:8080`
 }
 ```
 
+## Node Status (Unified Heartbeat + Resources)
+
+- `GET /v1/node/status`
+- Success: `200 OK`
+
+**Response**
+
+```json
+{
+    "ok": true,
+    "resources": {
+        "capacity_cpu_milli": 8000,
+        "capacity_memory_bytes": 33554432000,
+        "allocatable_cpu_milli": 7200,
+        "allocatable_memory_bytes": 30198988800,
+        "used_cpu_milli": 500,
+        "used_memory_bytes": 536870912,
+        "available_cpu_milli": 6700,
+        "available_memory_bytes": 29662117888,
+        "max_alloc_percent": 90,
+        "updated_at": "2026-05-14T01:00:00Z"
+    }
+}
+```
+
 ## Sandbox APIs
 
 ### Create Sandbox
@@ -366,6 +391,12 @@ Note:
     "error": "error message"
 }
 ```
+
+## Logging Environment Variables
+
+- `SANDBOX_LOG_DIR` (optional; when set, JSON logs are also written to rotating hourly files)
+- `SANDBOX_LOG_FILE_PREFIX` (default: `sandboxd`)
+- `APP_ENV` (optional; added to `app` log field, e.g. `sandboxd:prod`)
 
 # Example Create Payload (Wordpress)
 

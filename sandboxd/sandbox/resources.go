@@ -2,12 +2,14 @@ package sandbox
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"sandboxd-o/sandboxd/model"
 
@@ -119,6 +121,41 @@ func (s *Service) enforceAdmission(req model.CreateSandboxRequest) error {
 	}
 
 	return nil
+}
+
+func (s *Service) NodeResourceSnapshot(ctx context.Context) (model.NodeResourceSnapshot, error) {
+	_ = ctx
+
+	hostCPU := int64(runtime.NumCPU() * 1000)
+	hostMem, err := hostTotalMemoryBytes()
+	if err != nil {
+		return model.NodeResourceSnapshot{}, err
+	}
+
+	usedCPU, usedMem, err := s.currentAllocatedResources("")
+	if err != nil {
+		return model.NodeResourceSnapshot{}, err
+	}
+
+	allocCPU := hostCPU * int64(s.cfg.MaxAllocPercent) / 100
+	allocMem := hostMem * int64(s.cfg.MaxAllocPercent) / 100
+
+	availCPU := max(allocCPU-usedCPU, 0)
+
+	availMem := max(allocMem-usedMem, 0)
+
+	return model.NodeResourceSnapshot{
+		CapacityCPUMilli:    hostCPU,
+		CapacityMemoryBytes: hostMem,
+		AllocatableCPUMilli: allocCPU,
+		AllocatableMemory:   allocMem,
+		UsedCPUMilli:        usedCPU,
+		UsedMemoryBytes:     usedMem,
+		AvailableCPUMilli:   availCPU,
+		AvailableMemory:     availMem,
+		MaxAllocPercent:     s.cfg.MaxAllocPercent,
+		UpdatedAt:           time.Now().UTC(),
+	}, nil
 }
 
 func (s *Service) currentAllocatedResources(exceptSandboxID string) (int64, int64, error) {

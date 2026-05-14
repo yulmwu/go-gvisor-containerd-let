@@ -2,9 +2,9 @@ package config
 
 import (
 	"os"
-	"strconv"
-	"strings"
 	"time"
+
+	"sandboxd-o/pkg/envutil"
 )
 
 const (
@@ -55,16 +55,16 @@ func DefaultConfig() Config {
 		LockDir:                DefaultLockDir,
 		BridgeInterface:        DefaultBridgeInterface,
 		SubnetCIDR:             DefaultSubnetCIDR,
-		CNIConfPath:            Getenv("SANDBOX_CNI_CONF_PATH", DefaultCNIConfPath),
+		CNIConfPath:            envutil.Get("SANDBOX_CNI_CONF_PATH", DefaultCNIConfPath),
 		ReconcileInterval:      DefaultReconcileEvery,
 		ReconcileGrace:         DefaultReconcileGrace,
 		ReconcileHits:          DefaultReconcileHits,
-		RuntimeBinary:          Getenv("SANDBOX_RUNTIME_BINARY", DefaultRuntimeBinary),
-		MaxAllocPercent:        GetenvInt("SANDBOX_MAX_ALLOC_PERCENT", 90),
-		ProvisionTimeout:       GetenvDuration("SANDBOX_PROVISION_TIMEOUT", DefaultProvisionTimeout),
-		ContainerCreateTimeout: GetenvDuration("SANDBOX_CONTAINER_CREATE_TIMEOUT", DefaultContainerCreateTimeout),
-		ImagePullTimeout:       GetenvDuration("SANDBOX_IMAGE_PULL_TIMEOUT", DefaultImagePullTimeout),
-		Debug:                  strings.EqualFold(os.Getenv("SANDBOX_DEBUG"), "true") || os.Getenv("SANDBOX_DEBUG") == "1",
+		RuntimeBinary:          envutil.Get("SANDBOX_RUNTIME_BINARY", DefaultRuntimeBinary),
+		MaxAllocPercent:        envutil.GetInt("SANDBOX_MAX_ALLOC_PERCENT", 90),
+		ProvisionTimeout:       envutil.GetDuration("SANDBOX_PROVISION_TIMEOUT", DefaultProvisionTimeout),
+		ContainerCreateTimeout: envutil.GetDuration("SANDBOX_CONTAINER_CREATE_TIMEOUT", DefaultContainerCreateTimeout),
+		ImagePullTimeout:       envutil.GetDuration("SANDBOX_IMAGE_PULL_TIMEOUT", DefaultImagePullTimeout),
+		Debug:                  envutil.GetBool("SANDBOX_DEBUG", false),
 	}
 }
 
@@ -126,70 +126,4 @@ func WithConfigDefaults(cfg Config) Config {
 	}
 
 	return cfg
-}
-
-func Getenv(k, def string) string {
-	v := os.Getenv(k)
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-func GetenvInt(k string, def int) int {
-	v := strings.TrimSpace(os.Getenv(k))
-	if v == "" {
-		return def
-	}
-
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-
-	return n
-}
-
-func GetenvDuration(k string, def time.Duration) time.Duration {
-	v := strings.TrimSpace(os.Getenv(k))
-	if v == "" {
-		return def
-	}
-
-	d, err := time.ParseDuration(v)
-	if err != nil || d <= 0 {
-		return def
-	}
-
-	return d
-}
-
-func SplitCSV(raw string) []string {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		out = append(out, strings.ToUpper(strings.TrimSpace(p)))
-	}
-
-	return out
-}
-
-func CsvEnv(key string, def []string) []string {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return append([]string(nil), def...)
-	}
-
-	out := make([]string, 0)
-	for _, p := range SplitCSV(raw) {
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-
-	if len(out) == 0 {
-		return append([]string(nil), def...)
-	}
-
-	return out
 }

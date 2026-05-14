@@ -18,6 +18,16 @@ func (s *Server) healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (s *Server) nodeStatus(c *gin.Context) {
+	snap, err := s.svc.NodeResourceSnapshot(c.Request.Context())
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "resources": snap})
+}
+
 func (s *Server) createSandbox(c *gin.Context) {
 	var req model.CreateSandboxRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
