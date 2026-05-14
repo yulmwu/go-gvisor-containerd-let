@@ -18,6 +18,32 @@ Base URL: `http://localhost:8080`
 }
 ```
 
+## Node Status (Unified Heartbeat + Resources)
+
+- `GET /v1/node/status`
+- Success: `200 OK`
+
+**Response**
+
+```json
+{
+    "ok": true,
+    "resources": {
+        "capacity_cpu_milli": 8000,
+        "capacity_memory_bytes": 33554432000,
+        "allocatable_cpu_milli": 7200,
+        "allocatable_memory_bytes": 30198988800,
+        "used_cpu_milli": 500,
+        "used_memory_bytes": 536870912,
+        "available_cpu_milli": 6700,
+        "available_memory_bytes": 29662117888,
+        "max_alloc_percent": 90,
+        "updated_at": "2026-05-14T01:00:00Z"
+    },
+    "external_ip": "203.0.113.10"
+}
+```
+
 ## Sandbox APIs
 
 ### Create Sandbox

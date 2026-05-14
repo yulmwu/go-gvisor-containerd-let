@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"sandboxd-o/orchestrator/client"
@@ -16,8 +16,16 @@ import (
 )
 
 type Service struct {
-	cfg  config.Config
-	repo repo.NodeRepo
+	cfg   config.Config
+	repo  repo.NodeRepo
+	resMu sync.RWMutex
+	res   map[string]resourceCacheEntry
+}
+
+type resourceCacheEntry struct {
+	Current         types.NodeResources
+	LastPersisted   types.NodeResources
+	LastPersistedAt time.Time
 }
 
 func New(cfg config.Config) (*Service, error) {
@@ -26,7 +34,7 @@ func New(cfg config.Config) (*Service, error) {
 		return nil, err
 	}
 
-	s := &Service{cfg: cfg, repo: st}
+	s := &Service{cfg: cfg, repo: st, res: map[string]resourceCacheEntry{}}
 	return s, nil
 }
 
@@ -117,7 +125,21 @@ func (s *Service) probeNode(ctx context.Context, n types.Node) {
 	defer cancel()
 
 	c := client.New(n.SandboxdBaseURL, s.cfg.ProbeTimeout)
-	err := c.Healthz(probeCtx)
+	st, err := c.NodeStatus(probeCtx)
+	if err == nil {
+		res := st.Resources
+		s.putResourceCache(n.Name, res)
+		if s.shouldPersistResources(n.Name, res, false) {
+			if perr := s.repo.UpdateNodeResources(ctx, n.Name, res); perr != nil {
+				slog.Warn("persist node resources failed",
+					slog.String("node", n.Name),
+					slog.Any("error", perr),
+				)
+			} else {
+				s.markResourcePersisted(n.Name, res)
+			}
+		}
+	}
 
 	now := time.Now().UTC()
 	next := n
@@ -166,6 +188,19 @@ func (s *Service) RegisterNode(ctx context.Context, req types.RegisterNodeReques
 		return nil, err
 	}
 
+	c := client.New(n.SandboxdBaseURL, s.cfg.ProbeTimeout)
+	if st, stErr := c.NodeStatus(ctx); stErr == nil {
+		res := st.Resources
+		s.putResourceCache(req.Name, res)
+		_ = s.repo.UpdateNodeResources(ctx, req.Name, res)
+		s.markResourcePersisted(req.Name, res)
+	} else {
+		slog.Warn("register node status fetch failed",
+			slog.String("node", req.Name),
+			slog.Any("error", stErr),
+		)
+	}
+
 	s.probeNode(ctx, *n)
 	return s.repo.GetNode(ctx, req.Name)
 }
@@ -175,7 +210,15 @@ func (s *Service) DeleteNode(ctx context.Context, name string) error {
 		return fmt.Errorf("name is required")
 	}
 
-	return s.repo.DeleteNode(ctx, name)
+	if err := s.repo.DeleteNode(ctx, name); err != nil {
+		return err
+	}
+
+	s.resMu.Lock()
+	delete(s.res, name)
+	s.resMu.Unlock()
+
+	return nil
 }
 
 func (s *Service) ListNodes(ctx context.Context) ([]types.Node, error) {
@@ -210,4 +253,51 @@ func validateNodeInput(name, ip string, port int) error {
 	}
 
 	return nil
+}
+
+func (s *Service) putResourceCache(name string, res types.NodeResources) {
+	s.resMu.Lock()
+	entry := s.res[name]
+	entry.Current = res
+	s.res[name] = entry
+	s.resMu.Unlock()
+}
+
+func (s *Service) shouldPersistResources(name string, res types.NodeResources, force bool) bool {
+	if force {
+		return true
+	}
+
+	s.resMu.RLock()
+	entry, ok := s.res[name]
+	s.resMu.RUnlock()
+	if !ok {
+		return true
+	}
+
+	now := time.Now().UTC()
+	if entry.LastPersistedAt.IsZero() {
+		return true
+	}
+
+	if now.Sub(entry.LastPersistedAt) >= s.cfg.ResourcePersistMaxInt {
+		return true
+	}
+
+	if now.Sub(entry.LastPersistedAt) < s.cfg.ResourcePersistMinInt {
+		return false
+	}
+
+	_ = res
+	return true
+}
+
+func (s *Service) markResourcePersisted(name string, res types.NodeResources) {
+	s.resMu.Lock()
+	entry := s.res[name]
+	entry.Current = res
+	entry.LastPersisted = res
+	entry.LastPersistedAt = time.Now().UTC()
+	s.res[name] = entry
+	s.resMu.Unlock()
 }

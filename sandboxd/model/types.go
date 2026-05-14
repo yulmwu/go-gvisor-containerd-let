@@ -2,6 +2,19 @@ package model
 
 import "time"
 
+type NodeResourceSnapshot struct {
+	CapacityCPUMilli    int64     `json:"capacity_cpu_milli"`
+	CapacityMemoryBytes int64     `json:"capacity_memory_bytes"`
+	AllocatableCPUMilli int64     `json:"allocatable_cpu_milli"`
+	AllocatableMemory   int64     `json:"allocatable_memory_bytes"`
+	UsedCPUMilli        int64     `json:"used_cpu_milli"`
+	UsedMemoryBytes     int64     `json:"used_memory_bytes"`
+	AvailableCPUMilli   int64     `json:"available_cpu_milli"`
+	AvailableMemory     int64     `json:"available_memory_bytes"`
+	MaxAllocPercent     int       `json:"max_alloc_percent"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
 type Sandbox struct {
 	ID          string                    `json:"id"`
 	Phase       string                    `json:"phase"`

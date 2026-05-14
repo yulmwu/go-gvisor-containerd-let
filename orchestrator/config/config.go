@@ -22,6 +22,8 @@ const (
 	defaultProbeTimeout          = 3 * time.Second
 	defaultHeartbeatParallel     = false
 	defaultHeartbeatMaxParallel  = 4
+	defaultResourcePersistMinInt = 30 * time.Second
+	defaultResourcePersistMaxInt = 5 * time.Minute
 	defaultReadySuccessThreshold = 2
 	defaultNotReadyFailThreshold = 2
 	defaultShutdownTimeout       = 5 * time.Second
@@ -35,6 +37,8 @@ type Config struct {
 	ProbeTimeout             time.Duration
 	HeartbeatParallel        bool
 	HeartbeatMaxParallel     int
+	ResourcePersistMinInt    time.Duration
+	ResourcePersistMaxInt    time.Duration
 	ReadySuccessThreshold    int
 	NotReadyFailureThreshold int
 	ShutdownTimeout          time.Duration
@@ -67,6 +71,8 @@ func Load() (Config, error) {
 		ProbeTimeout:             envutil.GetDuration("ORCH_NODE_PROBE_TIMEOUT", defaultProbeTimeout),
 		HeartbeatParallel:        envutil.GetBool("ORCH_HEARTBEAT_PARALLEL", defaultHeartbeatParallel),
 		HeartbeatMaxParallel:     envutil.GetInt("ORCH_HEARTBEAT_MAX_PARALLEL", defaultHeartbeatMaxParallel),
+		ResourcePersistMinInt:    envutil.GetDuration("ORCH_RESOURCE_PERSIST_MIN_INTERVAL", defaultResourcePersistMinInt),
+		ResourcePersistMaxInt:    envutil.GetDuration("ORCH_RESOURCE_PERSIST_MAX_INTERVAL", defaultResourcePersistMaxInt),
 		ReadySuccessThreshold:    envutil.GetInt("ORCH_READY_SUCCESS_THRESHOLD", defaultReadySuccessThreshold),
 		NotReadyFailureThreshold: envutil.GetInt("ORCH_NOTREADY_FAILURE_THRESHOLD", defaultNotReadyFailThreshold),
 		ShutdownTimeout:          envutil.GetDuration("ORCH_SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
@@ -83,6 +89,14 @@ func Load() (Config, error) {
 
 	if cfg.HeartbeatMaxParallel < 1 {
 		cfg.HeartbeatMaxParallel = 1
+	}
+
+	if cfg.ResourcePersistMinInt <= 0 {
+		cfg.ResourcePersistMinInt = defaultResourcePersistMinInt
+	}
+
+	if cfg.ResourcePersistMaxInt <= 0 {
+		cfg.ResourcePersistMaxInt = defaultResourcePersistMaxInt
 	}
 
 	if cfg.SQLitePath != ":memory:" {

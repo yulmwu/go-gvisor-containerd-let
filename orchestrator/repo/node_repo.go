@@ -3,10 +3,12 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sandboxd-o/orchestrator/types"
@@ -21,6 +23,7 @@ type NodeRepo interface {
 	GetNode(ctx context.Context, name string) (*types.Node, error)
 	ListNodes(ctx context.Context) ([]types.Node, error)
 	UpdateHeartbeat(ctx context.Context, name string, state types.NodeState, successStreak, failureStreak int, lastError string, beatAt *time.Time) error
+	UpdateNodeResources(ctx context.Context, name string, res types.NodeResources) error
 }
 
 type SQLiteNodeRepo struct {
@@ -84,12 +87,43 @@ CREATE TABLE IF NOT EXISTS nodes (
   failure_streak INTEGER NOT NULL DEFAULT 0,
   last_error TEXT NOT NULL DEFAULT '',
   last_heartbeat_at TEXT,
+  capacity_cpu_milli INTEGER NOT NULL DEFAULT 0,
+  capacity_memory_bytes INTEGER NOT NULL DEFAULT 0,
+  allocatable_cpu_milli INTEGER NOT NULL DEFAULT 0,
+  allocatable_memory_bytes INTEGER NOT NULL DEFAULT 0,
+  used_cpu_milli INTEGER NOT NULL DEFAULT 0,
+  used_memory_bytes INTEGER NOT NULL DEFAULT 0,
+  available_cpu_milli INTEGER NOT NULL DEFAULT 0,
+  available_memory_bytes INTEGER NOT NULL DEFAULT 0,
+  max_alloc_percent INTEGER NOT NULL DEFAULT 0,
+  resource_updated_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 `
-	_, err := db.Exec(q)
-	return err
+	if _, err := db.Exec(q); err != nil {
+		return err
+	}
+
+	alter := []string{
+		`ALTER TABLE nodes ADD COLUMN capacity_cpu_milli INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN capacity_memory_bytes INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN allocatable_cpu_milli INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN allocatable_memory_bytes INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN used_cpu_milli INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN used_memory_bytes INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN available_cpu_milli INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN available_memory_bytes INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN max_alloc_percent INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN resource_updated_at TEXT`,
+	}
+	for _, stmt := range alter {
+		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumnErr(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *SQLiteNodeRepo) UpsertNode(ctx context.Context, name, ip string, port int, source string) error {
@@ -113,12 +147,12 @@ func (r *SQLiteNodeRepo) DeleteNode(ctx context.Context, name string) error {
 }
 
 func (r *SQLiteNodeRepo) GetNode(ctx context.Context, name string) (*types.Node, error) {
-	const q = `SELECT name, ip, port, source, state, success_streak, failure_streak, last_error, last_heartbeat_at, created_at, updated_at FROM nodes WHERE name=?`
+	const q = `SELECT name, ip, port, source, state, success_streak, failure_streak, last_error, last_heartbeat_at, capacity_cpu_milli, capacity_memory_bytes, allocatable_cpu_milli, allocatable_memory_bytes, used_cpu_milli, used_memory_bytes, available_cpu_milli, available_memory_bytes, max_alloc_percent, resource_updated_at, created_at, updated_at FROM nodes WHERE name=?`
 	return scanOne(r.db.QueryRowContext(ctx, q, name))
 }
 
 func (r *SQLiteNodeRepo) ListNodes(ctx context.Context) ([]types.Node, error) {
-	const q = `SELECT name, ip, port, source, state, success_streak, failure_streak, last_error, last_heartbeat_at, created_at, updated_at FROM nodes ORDER BY name ASC`
+	const q = `SELECT name, ip, port, source, state, success_streak, failure_streak, last_error, last_heartbeat_at, capacity_cpu_milli, capacity_memory_bytes, allocatable_cpu_milli, allocatable_memory_bytes, used_cpu_milli, used_memory_bytes, available_cpu_milli, available_memory_bytes, max_alloc_percent, resource_updated_at, created_at, updated_at FROM nodes ORDER BY name ASC`
 	rows, err := r.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
@@ -155,6 +189,43 @@ func (r *SQLiteNodeRepo) UpdateHeartbeat(ctx context.Context, name string, state
 	return err
 }
 
+func (r *SQLiteNodeRepo) UpdateNodeResources(ctx context.Context, name string, res types.NodeResources) error {
+	updated := time.Now().UTC().Format(time.RFC3339Nano)
+	var resUpdated any
+	if res.UpdatedAt != nil {
+		resUpdated = res.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+
+	const q = `UPDATE nodes SET
+capacity_cpu_milli=?,
+capacity_memory_bytes=?,
+allocatable_cpu_milli=?,
+allocatable_memory_bytes=?,
+used_cpu_milli=?,
+used_memory_bytes=?,
+available_cpu_milli=?,
+available_memory_bytes=?,
+max_alloc_percent=?,
+resource_updated_at=?,
+updated_at=?
+WHERE name=?`
+	_, err := r.db.ExecContext(ctx, q,
+		res.CapacityCPUMilli,
+		res.CapacityMemoryBytes,
+		res.AllocatableCPUMilli,
+		res.AllocatableMemory,
+		res.UsedCPUMilli,
+		res.UsedMemoryBytes,
+		res.AvailableCPUMilli,
+		res.AvailableMemory,
+		res.MaxAllocPercent,
+		resUpdated,
+		updated,
+		name,
+	)
+	return err
+}
+
 type scanner interface{ Scan(dest ...any) error }
 
 func scanOne(s scanner) (*types.Node, error) {
@@ -174,7 +245,17 @@ func scanRowScanner(s scanner) (types.Node, error) {
 	var state string
 	var created, updated string
 	var beat sql.NullString
-	if err := s.Scan(&n.Name, &n.IP, &n.Port, &n.Source, &state, &n.SuccessStreak, &n.FailureStreak, &n.LastError, &beat, &created, &updated); err != nil {
+	var resUpdated sql.NullString
+	if err := s.Scan(
+		&n.Name, &n.IP, &n.Port, &n.Source, &state,
+		&n.SuccessStreak, &n.FailureStreak, &n.LastError, &beat,
+		&n.Resources.CapacityCPUMilli, &n.Resources.CapacityMemoryBytes,
+		&n.Resources.AllocatableCPUMilli, &n.Resources.AllocatableMemory,
+		&n.Resources.UsedCPUMilli, &n.Resources.UsedMemoryBytes,
+		&n.Resources.AvailableCPUMilli, &n.Resources.AvailableMemory,
+		&n.Resources.MaxAllocPercent, &resUpdated,
+		&created, &updated,
+	); err != nil {
 		return n, err
 	}
 	n.State = types.NodeState(state)
@@ -201,5 +282,24 @@ func scanRowScanner(s scanner) (types.Node, error) {
 		n.LastHeartbeat = &bt
 	}
 
+	if resUpdated.Valid && resUpdated.String != "" {
+		rt, err := time.Parse(time.RFC3339Nano, resUpdated.String)
+		if err != nil {
+			return n, err
+		}
+		n.Resources.UpdatedAt = &rt
+	}
+
 	return n, nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column name")
 }

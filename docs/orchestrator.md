@@ -14,7 +14,7 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "ok": true
+    "ok": true
 }
 ```
 
@@ -30,9 +30,9 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "name": "sandbox-node-1",
-  "ip": "192.168.0.3",
-  "port": 8080
+    "name": "sandbox-node-1",
+    "ip": "192.168.0.3",
+    "port": 8080
 }
 ```
 
@@ -40,18 +40,30 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "node": {
-    "name": "sandbox-node-1",
-    "ip": "192.168.0.3",
-    "port": 8080,
-    "state": "Unknown",
-    "source": "api",
-    "success_streak": 0,
-    "failure_streak": 0,
-    "created_at": "2026-05-14T01:00:00Z",
-    "updated_at": "2026-05-14T01:00:00Z",
-    "sandboxd_base_url": "http://192.168.0.3:8080"
-  }
+    "node": {
+        "name": "sandbox-node-1",
+        "ip": "192.168.0.3",
+        "port": 8080,
+        "state": "Unknown",
+        "source": "api",
+        "success_streak": 0,
+        "failure_streak": 0,
+        "created_at": "2026-05-14T01:00:00Z",
+        "updated_at": "2026-05-14T01:00:00Z",
+        "resources": {
+            "capacity_cpu_milli": 8000,
+            "capacity_memory_bytes": 33554432000,
+            "allocatable_cpu_milli": 7200,
+            "allocatable_memory_bytes": 30198988800,
+            "used_cpu_milli": 500,
+            "used_memory_bytes": 536870912,
+            "available_cpu_milli": 6700,
+            "available_memory_bytes": 29662117888,
+            "max_alloc_percent": 90,
+            "updated_at": "2026-05-14T01:00:00Z"
+        },
+        "sandboxd_base_url": "http://192.168.0.3:8080"
+    }
 }
 ```
 
@@ -64,22 +76,34 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "items": [
-    {
-      "name": "sandbox-node-1",
-      "ip": "192.168.0.3",
-      "port": 8080,
-      "state": "Ready",
-      "source": "config",
-      "last_error": "",
-      "success_streak": 3,
-      "failure_streak": 0,
-      "created_at": "2026-05-14T01:00:00Z",
-      "updated_at": "2026-05-14T01:02:00Z",
-      "last_heartbeat": "2026-05-14T01:02:00Z",
-      "sandboxd_base_url": "http://192.168.0.3:8080"
-    }
-  ]
+    "items": [
+        {
+            "name": "sandbox-node-1",
+            "ip": "192.168.0.3",
+            "port": 8080,
+            "state": "Ready",
+            "source": "config",
+            "last_error": "",
+            "success_streak": 3,
+            "failure_streak": 0,
+            "created_at": "2026-05-14T01:00:00Z",
+            "updated_at": "2026-05-14T01:02:00Z",
+            "last_heartbeat": "2026-05-14T01:02:00Z",
+            "resources": {
+                "capacity_cpu_milli": 8000,
+                "capacity_memory_bytes": 33554432000,
+                "allocatable_cpu_milli": 7200,
+                "allocatable_memory_bytes": 30198988800,
+                "used_cpu_milli": 900,
+                "used_memory_bytes": 1073741824,
+                "available_cpu_milli": 6300,
+                "available_memory_bytes": 29125246976,
+                "max_alloc_percent": 90,
+                "updated_at": "2026-05-14T01:02:00Z"
+            },
+            "sandboxd_base_url": "http://192.168.0.3:8080"
+        }
+    ]
 }
 ```
 
@@ -93,16 +117,16 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "node": {
-    "name": "sandbox-node-1",
-    "ip": "192.168.0.3",
-    "port": 8080,
-    "state": "Ready",
-    "source": "config",
-    "success_streak": 3,
-    "failure_streak": 0,
-    "sandboxd_base_url": "http://192.168.0.3:8080"
-  }
+    "node": {
+        "name": "sandbox-node-1",
+        "ip": "192.168.0.3",
+        "port": 8080,
+        "state": "Ready",
+        "source": "config",
+        "success_streak": 3,
+        "failure_streak": 0,
+        "sandboxd_base_url": "http://192.168.0.3:8080"
+    }
 }
 ```
 
@@ -115,7 +139,7 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "deleted": "sandbox-node-1"
+    "deleted": "sandbox-node-1"
 }
 ```
 
@@ -129,15 +153,15 @@ Base URL: `http://localhost:8082`
 
 ```json
 {
-  "node": {
-    "name": "sandbox-node-1",
-    "ip": "192.168.0.3",
-    "port": 8080,
-    "state": "Ready",
-    "sandboxd_base_url": "http://192.168.0.3:8080"
-  },
-  "heartbeat": "ok",
-  "error": ""
+    "node": {
+        "name": "sandbox-node-1",
+        "ip": "192.168.0.3",
+        "port": 8080,
+        "state": "Ready",
+        "sandboxd_base_url": "http://192.168.0.3:8080"
+    },
+    "heartbeat": "ok",
+    "error": ""
 }
 ```
 
@@ -173,11 +197,11 @@ Base URL: `http://localhost:8082`
 Config file path: `ORCH_CONFIG_PATH` (default: `configs/apiserver.yaml`)
 
 ```yaml
-listenAddress: ":8082"
+listenAddress: ':8082'
 nodes:
-  - name: "sandbox-node-1"
-    ip: "127.0.0.1"
-    port: 8080
+    - name: 'sandbox-node-1'
+      ip: '127.0.0.1'
+      port: 8080
 ```
 
 Notes:
@@ -195,6 +219,8 @@ Notes:
 - `ORCH_NODE_PROBE_TIMEOUT` (default: `3s`)
 - `ORCH_HEARTBEAT_PARALLEL` (default: `false`)
 - `ORCH_HEARTBEAT_MAX_PARALLEL` (default: `4`, minimum: `1`)
+- `ORCH_RESOURCE_PERSIST_MIN_INTERVAL` (default: `30s`)
+- `ORCH_RESOURCE_PERSIST_MAX_INTERVAL` (default: `5m`)
 - `ORCH_READY_SUCCESS_THRESHOLD` (default: `2`)
 - `ORCH_NOTREADY_FAILURE_THRESHOLD` (default: `2`)
 - `ORCH_SHUTDOWN_TIMEOUT` (default: `5s`)
@@ -206,6 +232,11 @@ Notes:
 
 ```json
 {
-  "error": "error message"
+    "error": "error message"
 }
 ```
+
+## Runtime Behavior
+
+- Heartbeat loop uses one unified sandboxd endpoint (`/v1/node/status`) that includes both liveness and resource snapshot.
+- The latest resource snapshot is cached in memory and persisted to DB with interval-based control (`min/max interval`), without CPU/memory delta thresholds.

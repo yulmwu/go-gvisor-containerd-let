@@ -88,12 +88,13 @@ func (h *Handler) HeartbeatNode(c *gin.Context) {
 	}
 
 	err = client.Healthz(c.Request.Context())
+	st, err := client.NodeStatus(c.Request.Context())
 	status := "ok"
 	if err != nil {
 		status = "failed"
 	}
 
-	c.JSON(http.StatusOK, gin.H{"node": node, "heartbeat": status, "error": errString(err)})
+	c.JSON(http.StatusOK, gin.H{"node": node, "heartbeat": status, "resources": st.Resources, "error": errString(err)})
 }
 
 func (h *Handler) NodeListSandboxes(c *gin.Context) {
