@@ -1,0 +1,34 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 2%
+    patch:
+      default:
+        target: 70%
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "**/*_test.go"
+  - "cmd/**"
+  - "scripts/**"
+  - "docs/**"
+  - "assets/**"
+
+  # thin wiring / transport wrappers
+  - "**/router.go"
+  - "**/server.go"
+  - "**/response.go"
+
+  # runtime/host integration-heavy paths (containerd, gVisor, iptables, CNI)
+  - "sandboxd/network/**"
+  - "sandboxd/sandbox/**"
+  - "sandboxd/http/handlers.go"
+
+  # data-only definitions
+  - "**/types.go"
