@@ -5,7 +5,9 @@ on:
     branches: [ main ]
     paths:
       - 'cmd/**'
-      - 'internal/**'
+      - 'orchestrator/**'
+      - 'sandboxd/**'
+      - 'pkg/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
@@ -15,7 +17,9 @@ on:
     branches: [ main ]
     paths:
       - 'cmd/**'
-      - 'internal/**'
+      - 'orchestrator/**'
+      - 'sandboxd/**'
+      - 'pkg/**'
       - 'go.mod'
       - 'go.sum'
       - 'go.work'
