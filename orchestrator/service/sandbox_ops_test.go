@@ -579,3 +579,37 @@ func TestDeleteSandbox_WhenNodeAlreadyRemoved_CleansLocally(t *testing.T) {
 		t.Fatal("expected deleted sandbox")
 	}
 }
+
+func TestDeleteSandbox_EmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	if err := s.DeleteSandbox(context.Background(), " "); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got=%v", err)
+	}
+}
+
+func TestFinalizeSandboxDelete_ReleasePortsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.finalizeSandboxDelete(ctx, types.Sandbox{
+		ID: "sbx-release-fail",
+		Status: types.SandboxStatus{
+			Phase: types.SandboxPhaseDeleting,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected release ports error on canceled context")
+	}
+}

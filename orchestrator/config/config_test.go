@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoad_DefaultAndYaml(t *testing.T) {
@@ -47,5 +48,35 @@ func TestLoadBootstrap_MissingAndInvalid(t *testing.T) {
 
 	if _, err := loadBootstrap(invalid); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestLoad_SandboxOpTimeout(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "apiserver.yaml")
+	if err := os.WriteFile(cfgFile, []byte("listenAddress: ':18082'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("ORCH_CONFIG_PATH", cfgFile)
+	t.Setenv("ORCH_SQLITE_PATH", filepath.Join(dir, "orch.db"))
+	t.Setenv("ORCH_SANDBOX_OP_TIMEOUT", "45s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load err=%v", err)
+	}
+
+	if cfg.SandboxOpTimeout != 45*time.Second {
+		t.Fatalf("SandboxOpTimeout=%s", cfg.SandboxOpTimeout)
+	}
+
+	t.Setenv("ORCH_SANDBOX_OP_TIMEOUT", "0s")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load err=%v", err)
+	}
+
+	if cfg.SandboxOpTimeout != 60*time.Second {
+		t.Fatalf("SandboxOpTimeout default=%s", cfg.SandboxOpTimeout)
 	}
 }
