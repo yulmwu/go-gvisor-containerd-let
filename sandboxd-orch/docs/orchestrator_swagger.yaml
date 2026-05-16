@@ -1,0 +1,761 @@
+basePath: /
+definitions:
+  handlers.DeleteNodeResponse:
+    properties:
+      deleted:
+        type: string
+    type: object
+  handlers.DeleteSandboxResponse:
+    properties:
+      deleted:
+        type: string
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  handlers.HealthResponse:
+    properties:
+      ok:
+        type: boolean
+    type: object
+  handlers.HeartbeatResponse:
+    properties:
+      heartbeat:
+        type: string
+      heartbeat_error:
+        type: string
+      node:
+        $ref: '#/definitions/types.Node'
+      resources: {}
+      status_error:
+        type: string
+    type: object
+  handlers.NodeResponse:
+    properties:
+      node:
+        $ref: '#/definitions/types.Node'
+    type: object
+  handlers.NodesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/types.Node'
+        type: array
+    type: object
+  handlers.ProxyResponse:
+    additionalProperties: {}
+    type: object
+  handlers.SandboxObjectResponse:
+    properties:
+      sandbox:
+        $ref: '#/definitions/types.Sandbox'
+    type: object
+  handlers.SandboxObjectsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/types.Sandbox'
+        type: array
+    type: object
+  model.CreateContainerRequest:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      env:
+        items:
+          type: string
+        type: array
+      image:
+        type: string
+      name:
+        type: string
+      resource:
+        $ref: '#/definitions/model.ResourceSpec'
+      work_dir:
+        type: string
+    type: object
+  model.CreateSandboxRequest:
+    properties:
+      containers:
+        items:
+          $ref: '#/definitions/model.CreateContainerRequest'
+        type: array
+      egress:
+        type: boolean
+      id:
+        type: string
+      ports:
+        items:
+          $ref: '#/definitions/model.PortMapping'
+        type: array
+    type: object
+  model.PortMapping:
+    properties:
+      container_port:
+        type: integer
+      host_port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  model.ResourceSpec:
+    properties:
+      cpu:
+        type: string
+      memory:
+        type: string
+    type: object
+  types.CreateSandboxObjectRequest:
+    properties:
+      id:
+        type: string
+      spec:
+        $ref: '#/definitions/types.SandboxSpec'
+    type: object
+  types.Node:
+    properties:
+      created_at:
+        type: string
+      failure_streak:
+        type: integer
+      ip:
+        type: string
+      last_error:
+        type: string
+      last_heartbeat:
+        type: string
+      name:
+        type: string
+      port:
+        type: integer
+      resources:
+        $ref: '#/definitions/types.NodeResources'
+      sbxlet_base_url:
+        type: string
+      source:
+        type: string
+      state:
+        $ref: '#/definitions/types.NodeState'
+      success_streak:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  types.NodeResources:
+    properties:
+      allocatable_cpu_milli:
+        type: integer
+      allocatable_memory_bytes:
+        type: integer
+      available_cpu_milli:
+        type: integer
+      available_memory_bytes:
+        type: integer
+      capacity_cpu_milli:
+        type: integer
+      capacity_memory_bytes:
+        type: integer
+      max_alloc_percent:
+        type: integer
+      updated_at:
+        type: string
+      used_cpu_milli:
+        type: integer
+      used_memory_bytes:
+        type: integer
+    type: object
+  types.NodeState:
+    enum:
+    - Unknown
+    - Ready
+    - NotReady
+    type: string
+    x-enum-varnames:
+    - NodeStateUnknown
+    - NodeStateReady
+    - NodeStateNotReady
+  types.RegisterNodeRequest:
+    properties:
+      ip:
+        type: string
+      name:
+        type: string
+      port:
+        type: integer
+    type: object
+  types.Sandbox:
+    properties:
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      id:
+        type: string
+      spec:
+        $ref: '#/definitions/types.SandboxSpec'
+      status:
+        $ref: '#/definitions/types.SandboxStatus'
+      updated_at:
+        type: string
+    type: object
+  types.SandboxContainerSpec:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      env:
+        items:
+          type: string
+        type: array
+      image:
+        type: string
+      name:
+        type: string
+      resource:
+        $ref: '#/definitions/types.SandboxResource'
+      work_dir:
+        type: string
+    type: object
+  types.SandboxPhase:
+    enum:
+    - Pending
+    - Scheduled
+    - Running
+    - Failed
+    - Deleting
+    type: string
+    x-enum-varnames:
+    - SandboxPhasePending
+    - SandboxPhaseScheduled
+    - SandboxPhaseRunning
+    - SandboxPhaseFailed
+    - SandboxPhaseDeleting
+  types.SandboxPortAssign:
+    properties:
+      container_port:
+        type: integer
+      host_port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  types.SandboxPortSpec:
+    properties:
+      container_port:
+        type: integer
+      host_port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  types.SandboxResource:
+    properties:
+      cpu:
+        type: string
+      memory:
+        type: string
+    type: object
+  types.SandboxSpec:
+    properties:
+      containers:
+        items:
+          $ref: '#/definitions/types.SandboxContainerSpec'
+        type: array
+      egress:
+        type: boolean
+      ports:
+        items:
+          $ref: '#/definitions/types.SandboxPortSpec'
+        type: array
+      ttl_seconds:
+        type: integer
+    type: object
+  types.SandboxStatus:
+    properties:
+      assigned_ports:
+        items:
+          $ref: '#/definitions/types.SandboxPortAssign'
+        type: array
+      expire_at:
+        type: string
+      last_error:
+        type: string
+      node_name:
+        type: string
+      phase:
+        $ref: '#/definitions/types.SandboxPhase'
+      sandboxd_id:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Control-plane API for node registration, health probing, sandbox scheduling
+    objects, and node proxy operations.
+  title: Orchestrator API
+  version: "1.0"
+paths:
+  /api/v1/nodes:
+    get:
+      description: Lists all registered nodes with state and latest resource data.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.NodesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List nodes
+      tags:
+      - orchestrator-node
+  /api/v1/nodes/{name}:
+    delete:
+      description: Deletes node registration and detaches related sandbox scheduling
+        metadata.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DeleteNodeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete node
+      tags:
+      - orchestrator-node
+    get:
+      description: Returns a single node by name.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.NodeResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get node
+      tags:
+      - orchestrator-node
+  /api/v1/nodes/{name}/heartbeat:
+    post:
+      description: Probes sandboxd health and node resources immediately.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.HeartbeatResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Trigger node heartbeat
+      tags:
+      - orchestrator-node
+  /api/v1/nodes/{name}/reconcile:
+    post:
+      description: Proxies manual reconcile trigger to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy reconcile
+      tags:
+      - orchestrator-proxy
+  /api/v1/nodes/{name}/sandboxes:
+    get:
+      description: Proxies sandbox list request to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy list sandboxes
+      tags:
+      - orchestrator-proxy
+    post:
+      consumes:
+      - application/json
+      description: Proxies create-sandbox request directly to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Sandbox create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateSandboxRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy create sandbox
+      tags:
+      - orchestrator-proxy
+  /api/v1/nodes/{name}/sandboxes/{id}:
+    delete:
+      description: Proxies delete-sandbox request to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Sandbox ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy delete sandbox
+      tags:
+      - orchestrator-proxy
+    get:
+      description: Proxies sandbox detail request to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Sandbox ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy get sandbox
+      tags:
+      - orchestrator-proxy
+  /api/v1/nodes/{name}/sandboxes/{id}/containers/{container}/logs:
+    get:
+      description: Proxies container logs request to selected node sandboxd.
+      parameters:
+      - description: Node name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Sandbox ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Container name
+        in: path
+        name: container
+        required: true
+        type: string
+      - description: Cursor offset
+        in: query
+        name: cursor
+        type: string
+      - description: Line limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProxyResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy container logs
+      tags:
+      - orchestrator-proxy
+  /api/v1/nodes/register:
+    post:
+      consumes:
+      - application/json
+      description: Registers or updates a sandboxd node endpoint.
+      parameters:
+      - description: Node registration request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.RegisterNodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.NodeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Register node
+      tags:
+      - orchestrator-node
+  /api/v1/sandboxes:
+    get:
+      description: Lists orchestrator sandbox objects and their scheduling status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SandboxObjectsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List control-plane sandboxes
+      tags:
+      - orchestrator-sandbox
+    post:
+      consumes:
+      - application/json
+      description: Creates a scheduler-managed sandbox object in orchestrator.
+      parameters:
+      - description: Control-plane sandbox request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.CreateSandboxObjectRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.SandboxObjectResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Create control-plane sandbox object
+      tags:
+      - orchestrator-sandbox
+  /api/v1/sandboxes/{id}:
+    delete:
+      description: Deletes orchestrator sandbox object and requests runtime deletion
+        on assigned node.
+      parameters:
+      - description: Sandbox ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DeleteSandboxResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete control-plane sandbox
+      tags:
+      - orchestrator-sandbox
+    get:
+      description: Returns one orchestrator sandbox object.
+      parameters:
+      - description: Sandbox ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SandboxObjectResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get control-plane sandbox
+      tags:
+      - orchestrator-sandbox
+  /healthz:
+    get:
+      description: Returns orchestrator process health.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.HealthResponse'
+      summary: Health check
+      tags:
+      - orchestrator-system
+schemes:
+- http
+swagger: "2.0"

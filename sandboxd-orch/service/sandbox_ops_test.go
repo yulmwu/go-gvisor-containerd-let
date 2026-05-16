@@ -1,0 +1,615 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"sandboxd-o/sandboxd-orch/config"
+	"sandboxd-o/sandboxd-orch/types"
+)
+
+func newServiceWithNode(t *testing.T, sandboxd *httptest.Server) *Service {
+	t.Helper()
+	s, err := New(config.Config{
+		SQLitePath:               filepath.Join(t.TempDir(), "orch.db"),
+		ProbeTimeout:             time.Second,
+		HeartbeatInterval:        time.Second,
+		ResourceSyncInterval:     time.Second,
+		ResourcePersistMinInt:    time.Millisecond,
+		ResourcePersistMaxInt:    time.Second,
+		ReadySuccessThreshold:    1,
+		NotReadyFailureThreshold: 1,
+		ShutdownTimeout:          time.Second,
+		SchedulerInterval:        100 * time.Millisecond,
+		ReconcileInterval:        100 * time.Millisecond,
+		HostPortMin:              10000,
+		HostPortMax:              10010,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u, _ := url.Parse(sandboxd.URL)
+	port, _ := strconv.Atoi(u.Port())
+	if _, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: u.Hostname(), Port: port}, "api"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Force ready+resource snapshot for deterministic scheduling.
+	now := time.Now().UTC()
+	_ = s.repo.UpdateHeartbeat(context.Background(), "n1", types.NodeStateReady, 1, 0, "", &now)
+	_ = s.repo.UpdateNodeResources(context.Background(), "n1", types.NodeResources{
+		CapacityCPUMilli:    4000,
+		CapacityMemoryBytes: 8 * 1024 * 1024 * 1024,
+		AllocatableCPUMilli: 3500,
+		AllocatableMemory:   7 * 1024 * 1024 * 1024,
+		AvailableCPUMilli:   3500,
+		AvailableMemory:     7 * 1024 * 1024 * 1024,
+	})
+
+	return s
+}
+
+func TestSandboxCreateAndSchedule_DynamicPort(t *testing.T) {
+	var createCalls int
+	sbxNode := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			createCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-a"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-a" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sbx-a"})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer sbxNode.Close()
+
+	s := newServiceWithNode(t, sbxNode)
+	defer s.Close()
+
+	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-a",
+		Spec: types.SandboxSpec{
+			Egress: true,
+			Ports:  []types.SandboxPortSpec{{ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{
+				Name:     "web",
+				Image:    "nginx",
+				Resource: types.SandboxResource{CPU: "200m", Memory: "256Mi"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSchedulerOnce(context.Background())
+	got, err := s.GetSandbox(context.Background(), "sbx-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+
+	if got.Status.NodeName != "n1" {
+		t.Fatalf("node=%s", got.Status.NodeName)
+	}
+
+	if len(got.Status.AssignedPorts) != 1 || got.Status.AssignedPorts[0].HostPort < 10000 {
+		t.Fatalf("assigned ports=%+v", got.Status.AssignedPorts)
+	}
+
+	if createCalls == 0 {
+		t.Fatal("expected sandboxd create call")
+	}
+}
+
+func TestScheduler_PortConflictToFailed(t *testing.T) {
+	sbxNode := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "ok"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer sbxNode.Close()
+
+	s := newServiceWithNode(t, sbxNode)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-1",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10005, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c1", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-2",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10005, ContainerPort: 8080, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c2", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+
+	got, err := s.GetSandbox(context.Background(), "sbx-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseFailed {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+}
+
+func TestSandboxReconcile_TTLDelete(t *testing.T) {
+	deleteCalls := 0
+	sbxNode := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-ttl"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-ttl" {
+			deleteCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sbx-ttl"})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer sbxNode.Close()
+
+	s := newServiceWithNode(t, sbxNode)
+	defer s.Close()
+
+	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-ttl",
+		Spec: types.SandboxSpec{
+			TTLSeconds: 1,
+			Ports:      []types.SandboxPortSpec{{ContainerPort: 80}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.runSchedulerOnce(context.Background())
+
+	sbx, err := s.GetSandbox(context.Background(), "sbx-ttl")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	past := time.Now().UTC().Add(-time.Second)
+	sbx.Status.ExpireAt = &past
+	if err := s.sbxRepo.UpdateSandboxStatus(context.Background(), sbx.ID, sbx.Status); err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSandboxReconcileOnce(context.Background())
+	if deleteCalls == 0 {
+		t.Fatal("expected delete call")
+	}
+
+	if _, err := s.GetSandbox(context.Background(), "sbx-ttl"); err == nil {
+		t.Fatal("expected sandbox deleted")
+	}
+}
+
+func TestScheduler_ScoringChoosesHigherAvailableCPUNode(t *testing.T) {
+	var n1Creates, n2Creates int
+	n1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			n1Creates++
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "x"}})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer n1.Close()
+
+	n2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			n2Creates++
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "x"}})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer n2.Close()
+
+	s := newServiceWithNode(t, n1)
+	defer s.Close()
+
+	u2, _ := url.Parse(n2.URL)
+	p2, _ := strconv.Atoi(u2.Port())
+	_, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n2", IP: u2.Hostname(), Port: p2}, "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	_ = s.repo.UpdateHeartbeat(context.Background(), "n2", types.NodeStateReady, 1, 0, "", &now)
+	_ = s.repo.UpdateNodeResources(context.Background(), "n1", types.NodeResources{AvailableCPUMilli: 1000, AvailableMemory: 2 * 1024 * 1024 * 1024})
+	_ = s.repo.UpdateNodeResources(context.Background(), "n2", types.NodeResources{AvailableCPUMilli: 3000, AvailableMemory: 2 * 1024 * 1024 * 1024})
+
+	_, err = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-score",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{ContainerPort: 80}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "500m", Memory: "64Mi"}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSchedulerOnce(context.Background())
+
+	got, err := s.GetSandbox(context.Background(), "sbx-score")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.NodeName != "n2" {
+		t.Fatalf("expected n2 chosen, got=%s", got.Status.NodeName)
+	}
+
+	if n1Creates != 0 || n2Creates == 0 {
+		t.Fatalf("unexpected create counts n1=%d n2=%d", n1Creates, n2Creates)
+	}
+}
+
+func TestHostPortReleasedAfterDelete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "ok"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && (r.URL.Path == "/v1/sandboxes/sbx-del-1" || r.URL.Path == "/v1/sandboxes/sbx-del-2") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "ok"})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-del-1",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10006, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c1", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+
+	s.runSchedulerOnce(context.Background())
+	if err := s.DeleteSandbox(context.Background(), "sbx-del-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-del-2",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10006, ContainerPort: 8080, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c2", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+
+	s.runSchedulerOnce(context.Background())
+	got, err := s.GetSandbox(context.Background(), "sbx-del-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("expected running after reuse of released port, got=%s", got.Status.Phase)
+	}
+}
+
+func TestReconcile_DeletingPhaseFinalized(t *testing.T) {
+	deletes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "x"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-del-phase" {
+			deletes++
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "x"})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-del-phase",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{ContainerPort: 80}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+	sbx, _ := s.GetSandbox(context.Background(), "sbx-del-phase")
+	sbx.Status.Phase = types.SandboxPhaseDeleting
+	_ = s.sbxRepo.UpdateSandboxStatus(context.Background(), sbx.ID, sbx.Status)
+
+	s.runSandboxReconcileOnce(context.Background())
+
+	if deletes == 0 {
+		t.Fatal("expected delete request")
+	}
+
+	if _, err := s.GetSandbox(context.Background(), "sbx-del-phase"); err == nil {
+		t.Fatal("expected deleted sandbox")
+	}
+}
+
+func TestCreateSandboxValidationAndHostPortRangeFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID:   "",
+		Spec: types.SandboxSpec{},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got=%v", err)
+	}
+
+	_, err = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "bad-cpu",
+		Spec: types.SandboxSpec{
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100x", Memory: "64Mi"}}},
+		},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid cpu input, got=%v", err)
+	}
+
+	_, err = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "bad-range",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 9999, ContainerPort: 80}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSchedulerOnce(context.Background())
+
+	got, err := s.GetSandbox(context.Background(), "bad-range")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseFailed {
+		t.Fatalf("expected failed for out-of-range hostport, got=%s", got.Status.Phase)
+	}
+
+	_, err = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "bad-ttl",
+		Spec: types.SandboxSpec{
+			TTLSeconds: -1,
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid ttl input, got=%v", err)
+	}
+}
+
+func TestDeleteNode_MarksScheduledOrRunningSandboxFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "ok"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-node-del",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10007, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+
+	s.runSchedulerOnce(context.Background())
+
+	if err := s.DeleteNode(context.Background(), "n1"); err != nil {
+		t.Fatalf("delete node err=%v", err)
+	}
+
+	got, err := s.GetSandbox(context.Background(), "sbx-node-del")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseFailed {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+
+	if got.Status.NodeName != "" {
+		t.Fatalf("node expected cleared, got=%s", got.Status.NodeName)
+	}
+
+	if len(got.Status.AssignedPorts) != 0 {
+		t.Fatalf("assigned ports expected released, got=%v", got.Status.AssignedPorts)
+	}
+
+	used, err := s.sbxRepo.NodeUsedHostPorts(context.Background(), "n1")
+	if err != nil {
+		t.Fatalf("NodeUsedHostPorts err=%v", err)
+	}
+
+	if len(used) != 0 {
+		t.Fatalf("node reserved ports should be released, got=%v", used)
+	}
+}
+
+func TestListAndTriggerReconcile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes":
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-trg"}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-trg":
+			_ = json.NewEncoder(w).Encode(map[string]any{"deleted": "sbx-trg"})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-trg",
+		Spec: types.SandboxSpec{
+			Containers: []types.SandboxContainerSpec{
+				{Name: "c1", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSchedulerOnce(context.Background())
+
+	items, err := s.ListSandboxes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) == 0 {
+		t.Fatal("expected list items")
+	}
+
+	if err := s.TriggerSandboxReconcile(context.Background(), "sbx-trg"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartLoops(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.StartSchedulerLoop(ctx)
+	s.StartSandboxReconcileLoop(ctx)
+	time.Sleep(120 * time.Millisecond)
+	cancel()
+}
+
+func TestDeleteSandbox_WhenNodeAlreadyRemoved_CleansLocally(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "ok"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-gone-node",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10008, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+
+	if err := s.repo.DeleteNode(context.Background(), "n1"); err != nil {
+		t.Fatalf("delete node direct err=%v", err)
+	}
+
+	if err := s.DeleteSandbox(context.Background(), "sbx-gone-node"); err != nil {
+		t.Fatalf("delete sandbox should succeed even when node gone: %v", err)
+	}
+
+	if _, err := s.GetSandbox(context.Background(), "sbx-gone-node"); err == nil {
+		t.Fatal("expected deleted sandbox")
+	}
+}
+
+func TestDeleteSandbox_EmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	if err := s.DeleteSandbox(context.Background(), " "); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got=%v", err)
+	}
+}
+
+func TestFinalizeSandboxDelete_ReleasePortsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.finalizeSandboxDelete(ctx, types.Sandbox{
+		ID: "sbx-release-fail",
+		Status: types.SandboxStatus{
+			Phase: types.SandboxPhaseDeleting,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected release ports error on canceled context")
+	}
+}

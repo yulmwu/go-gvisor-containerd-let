@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"sandboxd-o/orchestrator/config"
-	_ "sandboxd-o/orchestrator/docs"
-	httpserver "sandboxd-o/orchestrator/http"
-	"sandboxd-o/orchestrator/service"
 	"sandboxd-o/pkg/logging"
+	"sandboxd-o/sandboxd-orch/config"
+	_ "sandboxd-o/sandboxd-orch/docs"
+	httpserver "sandboxd-o/sandboxd-orch/http"
+	"sandboxd-o/sandboxd-orch/service"
 )
 
 // @title Orchestrator API Server

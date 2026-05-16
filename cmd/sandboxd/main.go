@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"sandboxd-o/pkg/logging"
-	"sandboxd-o/sandboxd/config"
-	_ "sandboxd-o/sandboxd/docs"
-	httpserver "sandboxd-o/sandboxd/http"
-	"sandboxd-o/sandboxd/sandbox"
+	"sandboxd-o/sandboxd-let/config"
+	_ "sandboxd-o/sandboxd-let/docs"
+	httpserver "sandboxd-o/sandboxd-let/http"
+	"sandboxd-o/sandboxd-let/sandbox"
 
 	"github.com/joho/godotenv"
 )

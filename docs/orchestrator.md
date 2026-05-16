@@ -31,7 +31,7 @@ Base URL: `http://localhost:8082`
 
 ### POST /api/v1/nodes/register
 
-Register or update a sandboxd node endpoint.
+Register or update a sbxlet node endpoint.
 
 - Success: `200 OK`
 - Failure: `400 Bad Request` (invalid request body or invalid `name/ip/port`)
@@ -73,7 +73,7 @@ Register or update a sandboxd node endpoint.
             "max_alloc_percent": 90,
             "updated_at": "2026-05-15T04:30:00Z"
         },
-        "sandboxd_base_url": "http://192.168.0.3:8080"
+        "sbxlet_base_url": "http://192.168.0.3:8080"
     }
 }
 ```
@@ -114,7 +114,7 @@ List all registered nodes.
                 "max_alloc_percent": 90,
                 "updated_at": "2026-05-15T04:31:30Z"
             },
-            "sandboxd_base_url": "http://192.168.0.3:8080"
+            "sbxlet_base_url": "http://192.168.0.3:8080"
         }
     ]
 }
@@ -140,7 +140,7 @@ Get a single node.
         "source": "api",
         "success_streak": 2,
         "failure_streak": 0,
-        "sandboxd_base_url": "http://192.168.0.3:8080",
+        "sbxlet_base_url": "http://192.168.0.3:8080",
         "resources": {
             "available_cpu_milli": 3500,
             "available_memory_bytes": 14904602214,
@@ -168,7 +168,7 @@ Delete a node registration.
 
 ### POST /api/v1/nodes/{name}/heartbeat
 
-Trigger immediate health/resource probe against sandboxd.
+Trigger immediate health/resource probe against sbxlet.
 
 - Success: `200 OK`
 - Failure: `404 Not Found` (`node not found`)
@@ -181,7 +181,7 @@ Trigger immediate health/resource probe against sandboxd.
     "node": {
         "name": "node-a",
         "state": "Ready",
-        "sandboxd_base_url": "http://192.168.0.3:8080"
+        "sbxlet_base_url": "http://192.168.0.3:8080"
     },
     "heartbeat": "ok",
     "resources": {
@@ -382,13 +382,13 @@ Delete one control-plane sandbox object.
 }
 ```
 
-## Node Proxy APIs (Pass-through to sandboxd)
+## Node Proxy APIs (Pass-through to sbxlet)
 
 All endpoints below require `{name}` to be an existing node in orchestrator.
 
 If node lookup fails: `404 Not Found`.
 
-If upstream sandboxd call fails or returns invalid data: `502 Bad Gateway`.
+If upstream sbxlet call fails or returns invalid data: `502 Bad Gateway`.
 
 ### GET /api/v1/nodes/{name}/sandboxes
 
@@ -432,7 +432,7 @@ Query params:
 
 ### POST /api/v1/nodes/{name}/sandboxes
 
-Create sandbox directly on selected node (sandboxd API pass-through).
+Create sandbox directly on selected node (sbxlet API pass-through).
 
 - Success: `200 OK`
 - Failure: `400 Bad Request` (invalid JSON body)
@@ -515,7 +515,7 @@ Query params:
 
 ### POST /api/v1/nodes/{name}/reconcile
 
-Trigger sandboxd reconcile on selected node.
+Trigger sbxlet reconcile on selected node.
 
 - Success: `200 OK`
 

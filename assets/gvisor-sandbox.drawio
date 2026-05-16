@@ -1,6 +1,6 @@
 <mxfile host="Electron">
   <diagram name="페이지-1" id="ivmmlOn7s5H1eUeJs-Ln">
-    <mxGraphModel dx="2357" dy="1415" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3300" pageHeight="4681" math="0" shadow="0">
+    <mxGraphModel dx="1375" dy="937" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3300" pageHeight="4681" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -46,7 +46,7 @@
         <mxCell id="OyS1ULgSIiXid0jxEHqq-120" parent="1" style="fillColor=none;strokeColor=#5A6C86;dashed=1;verticalAlign=top;fontStyle=0;fontColor=#5A6C86;whiteSpace=wrap;html=1;labelBackgroundColor=default;fontSize=10;" value="User Space Kernel (Sandbox)" vertex="1">
           <mxGeometry height="120" width="170" x="1315" y="1045" as="geometry" />
         </mxCell>
-        <mxCell id="OyS1ULgSIiXid0jxEHqq-67" parent="1" style="fillColor=none;strokeColor=#000000;verticalAlign=top;fontStyle=0;fontColor=#000000;whiteSpace=wrap;html=1;" value="sandboxd-o" vertex="1">
+        <mxCell id="OyS1ULgSIiXid0jxEHqq-67" parent="1" style="fillColor=none;strokeColor=#000000;verticalAlign=top;fontStyle=0;fontColor=#000000;whiteSpace=wrap;html=1;" value="Node Agent" vertex="1">
           <mxGeometry height="225" width="330" x="920" y="790" as="geometry" />
         </mxCell>
         <mxCell id="OyS1ULgSIiXid0jxEHqq-69" parent="1" style="fillColor=none;strokeColor=#000000;verticalAlign=top;fontStyle=0;fontColor=#000000;whiteSpace=wrap;html=1;" value="Filesystem Surface" vertex="1">
@@ -272,7 +272,7 @@
           <mxGeometry height="30" width="220" x="1140" y="1490" as="geometry" />
         </mxCell>
         <mxCell id="Mwxs7A00b_vvEx6520Se-43" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
-          <mxGeometry height="140" width="270" x="950" y="855" as="geometry" />
+          <mxGeometry height="135" width="270" x="950" y="855" as="geometry" />
         </mxCell>
         <mxCell id="OyS1ULgSIiXid0jxEHqq-72" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;" value="Orchestrator" vertex="1">
           <mxGeometry height="30" width="140" x="960" y="885" as="geometry" />
@@ -291,7 +291,7 @@
             <mxPoint x="1340" y="845" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="OyS1ULgSIiXid0jxEHqq-71" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="sandboxd-o API Server (Node Agent)" vertex="1">
+        <mxCell id="OyS1ULgSIiXid0jxEHqq-71" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="sbxlet Server" vertex="1">
           <mxGeometry height="40" width="290" x="940" y="825" as="geometry" />
         </mxCell>
         <mxCell id="Mwxs7A00b_vvEx6520Se-48" parent="1" style="text;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=10;labelBackgroundColor=default;" value="/run/containerd/containerd.sock" vertex="1">
