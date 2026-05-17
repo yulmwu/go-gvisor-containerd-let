@@ -267,3 +267,65 @@ func TestLoopsAndForEachNode(t *testing.T) {
 	s.runHeartbeatOnce(context.Background())
 	s.runResourceSyncOnce(context.Background())
 }
+
+func TestDeleteNodeForce_SkipsNodeAPICalls(t *testing.T) {
+	var deleteCalls atomic.Int32
+	var reconcileCalls atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-force-node-ops"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-force-node-ops" {
+			deleteCalls.Add(1)
+			http.Error(w, "forced failure", http.StatusInternalServerError)
+			return
+		}
+
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/reconcile" {
+			reconcileCalls.Add(1)
+			http.Error(w, "forced failure", http.StatusInternalServerError)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-force-node-ops",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10009, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+
+	if err := s.DeleteNode(context.Background(), "n1"); err == nil {
+		t.Fatal("expected non-force delete to fail on node API error")
+	}
+
+	if deleteCalls.Load() == 0 {
+		t.Fatal("expected non-force path to call node delete API")
+	}
+
+	deleteCalls.Store(0)
+	reconcileCalls.Store(0)
+
+	if err := s.DeleteNodeForce(context.Background(), "n1", true); err != nil {
+		t.Fatalf("force delete err=%v", err)
+	}
+
+	if deleteCalls.Load() != 0 {
+		t.Fatalf("force delete should skip node delete API, got calls=%d", deleteCalls.Load())
+	}
+
+	if reconcileCalls.Load() != 0 {
+		t.Fatalf("force delete should skip reconcile API, got calls=%d", reconcileCalls.Load())
+	}
+}

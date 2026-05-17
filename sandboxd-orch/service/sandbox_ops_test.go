@@ -439,6 +439,16 @@ func TestDeleteNode_MarksScheduledOrRunningSandboxFailed(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "ok"}})
 			return
 		}
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-node-del" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"deleted": "sbx-node-del"})
+			return
+		}
+
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/reconcile" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+
 		http.NotFound(w, r)
 	}))
 	defer server.Close()
@@ -483,6 +493,56 @@ func TestDeleteNode_MarksScheduledOrRunningSandboxFailed(t *testing.T) {
 
 	if len(used) != 0 {
 		t.Fatalf("node reserved ports should be released, got=%v", used)
+	}
+}
+
+func TestDeleteNode_ForceBehaviorOnNodeAPIFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-force"}})
+			return
+		}
+
+		if r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/sbx-force" {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/reconcile" {
+			http.Error(w, "reconcile failed", http.StatusInternalServerError)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+
+	_, _ = s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-force",
+		Spec: types.SandboxSpec{
+			Ports:      []types.SandboxPortSpec{{HostPort: 10008, ContainerPort: 80, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{Name: "c", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+	})
+	s.runSchedulerOnce(context.Background())
+
+	if err := s.DeleteNode(context.Background(), "n1"); err == nil {
+		t.Fatal("expected delete to fail when node API delete fails without force")
+	}
+
+	if _, err := s.GetNode(context.Background(), "n1"); err != nil {
+		t.Fatalf("node should remain after failed delete: %v", err)
+	}
+
+	if err := s.DeleteNodeForce(context.Background(), "n1", true); err != nil {
+		t.Fatalf("force delete err=%v", err)
+	}
+
+	if _, err := s.GetNode(context.Background(), "n1"); err == nil {
+		t.Fatal("expected node removed after force delete")
 	}
 }
 

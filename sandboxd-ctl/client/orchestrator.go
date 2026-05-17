@@ -36,7 +36,16 @@ func (c *Client) RegisterNode(ctx context.Context, req RegisterNodeRequest) (map
 }
 
 func (c *Client) DeleteNode(ctx context.Context, name string) (map[string]any, error) {
-	return c.do(ctx, http.MethodDelete, "/api/v1/nodes/"+url.PathEscape(strings.TrimSpace(name)), nil)
+	return c.DeleteNodeWithForce(ctx, name, false)
+}
+
+func (c *Client) DeleteNodeWithForce(ctx context.Context, name string, force bool) (map[string]any, error) {
+	path := "/api/v1/nodes/" + url.PathEscape(strings.TrimSpace(name))
+	if force {
+		path += "?force=true"
+	}
+
+	return c.do(ctx, http.MethodDelete, path, nil)
 }
 
 func (c *Client) GetSandbox(ctx context.Context, id string) (map[string]any, error) {

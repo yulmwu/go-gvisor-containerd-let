@@ -154,6 +154,10 @@ Get a single node.
 
 Delete a node registration.
 
+- Query: `force` (optional, boolean)
+  - `false` or omitted: orchestrator calls node APIs (sandbox delete/reconcile) and fails node deletion if those calls fail.
+  - `true`: orchestrator skips node API failures and force-deletes node metadata.
+  - Use `force=true` only when the node is already confirmed gone/unreachable.
 - Success: `200 OK`
 - Failure: `400 Bad Request` (empty/invalid name)
 - Failure: `500 Internal Server Error`
@@ -165,6 +169,11 @@ Delete a node registration.
     "deleted": "node-a"
 }
 ```
+
+Examples:
+
+- Normal delete: `DELETE /api/v1/nodes/node-a`
+- Force delete: `DELETE /api/v1/nodes/node-a?force=true`
 
 ### POST /api/v1/nodes/{name}/heartbeat
 

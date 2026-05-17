@@ -36,12 +36,16 @@ func (s *Service) RegisterNode(ctx context.Context, req types.RegisterNodeReques
 }
 
 func (s *Service) DeleteNode(ctx context.Context, name string) error {
+	return s.DeleteNodeForce(ctx, name, false)
+}
+
+func (s *Service) DeleteNodeForce(ctx context.Context, name string, force bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 
-	if err := s.detachNodeSandboxes(ctx, name); err != nil {
+	if err := s.detachNodeSandboxes(ctx, name, force); err != nil {
 		return err
 	}
 
@@ -53,12 +57,19 @@ func (s *Service) DeleteNode(ctx context.Context, name string) error {
 	return nil
 }
 
-func (s *Service) detachNodeSandboxes(ctx context.Context, nodeName string) error {
+func (s *Service) detachNodeSandboxes(ctx context.Context, nodeName string, force bool) error {
 	if s.sbxRepo == nil {
 		return nil
 	}
 
-	client, _, _ := s.SandboxOpClientForNode(ctx, nodeName)
+	client, _, err := s.SandboxOpClientForNode(ctx, nodeName)
+	if err != nil && !force {
+		return fmt.Errorf("prepare node client for delete: %w", err)
+	}
+
+	if force {
+		client = nil
+	}
 
 	items, err := s.sbxRepo.ListSandboxes(ctx)
 	if err != nil {
@@ -79,8 +90,11 @@ func (s *Service) detachNodeSandboxes(ctx context.Context, nodeName string) erro
 			_ = s.sbxRepo.DeleteSandbox(ctx, sbx.ID)
 		case types.SandboxPhaseRunning, types.SandboxPhaseScheduled:
 			if client != nil {
-				_, _ = client.DeleteSandbox(ctx, sbx.ID)
+				if _, err := client.DeleteSandbox(ctx, sbx.ID); err != nil && !force {
+					return fmt.Errorf("delete sandbox on node %s for sandbox %s: %w", nodeName, sbx.ID, err)
+				}
 			}
+
 			st := sbx.Status
 			st.Phase = types.SandboxPhaseFailed
 			st.LastError = "node removed"
@@ -91,7 +105,9 @@ func (s *Service) detachNodeSandboxes(ctx context.Context, nodeName string) erro
 	}
 
 	if client != nil {
-		_, _ = client.Reconcile(ctx)
+		if _, err := client.Reconcile(ctx); err != nil && !force {
+			return fmt.Errorf("reconcile node %s during delete: %w", nodeName, err)
+		}
 	}
 
 	return nil

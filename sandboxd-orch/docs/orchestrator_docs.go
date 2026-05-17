@@ -104,6 +104,12 @@ const docTemplateorchestrator = `{
                         "name": "name",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Force delete without node API calls (use only when node is already gone)",
+                        "name": "force",
+                        "in": "query"
                     }
                 ],
                 "responses": {

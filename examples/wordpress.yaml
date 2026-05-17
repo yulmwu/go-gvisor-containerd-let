@@ -3,7 +3,7 @@
 
 apiVersion: sandboxd.o/v1
 kind: Sandbox
-id: sbx-wordpress-demo
+id: sbx-wordpress-demo7
 spec:
   egress: true
   ttl_seconds: 3600

@@ -70,7 +70,7 @@ func TestService_RegisterListDelete(t *testing.T) {
 		t.Fatalf("ListNodes err=%v len=%d", err, len(list))
 	}
 
-	if err := s.DeleteNode(context.Background(), "n1"); err != nil {
+	if err := s.DeleteNodeForce(context.Background(), "n1", true); err != nil {
 		t.Fatalf("DeleteNode err=%v", err)
 	}
 }

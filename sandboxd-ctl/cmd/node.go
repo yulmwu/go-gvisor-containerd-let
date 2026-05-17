@@ -70,6 +70,8 @@ func newNodeRegisterCommand(opts *Options) *cobra.Command {
 }
 
 func newNodeDeleteCommand(opts *Options) *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a node registration",
@@ -84,7 +86,7 @@ func newNodeDeleteCommand(opts *Options) *cobra.Command {
 			ctx, cancel := withCtx(opts)
 			defer cancel()
 
-			out, err := c.DeleteNode(ctx, name)
+			out, err := c.DeleteNodeWithForce(ctx, name, force)
 			if err != nil {
 				return err
 			}
@@ -92,5 +94,6 @@ func newNodeDeleteCommand(opts *Options) *cobra.Command {
 			return printAny(cmd.OutOrStdout(), out, opts.Output)
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "skip node API calls and force-delete node metadata")
 	return cmd
 }

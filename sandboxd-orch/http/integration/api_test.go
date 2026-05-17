@@ -26,7 +26,14 @@ func TestAPI_AllEndpoints(t *testing.T) {
 		case r.URL.Path == "/healthz":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		case r.URL.Path == "/v1/node/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 4000, "allocatable_cpu_milli": 3600}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{
+				"capacity_cpu_milli":       4000,
+				"allocatable_cpu_milli":    3600,
+				"capacity_memory_bytes":    int64(8 * 1024 * 1024 * 1024),
+				"allocatable_memory_bytes": int64(7 * 1024 * 1024 * 1024),
+				"available_cpu_milli":      3600,
+				"available_memory_bytes":   int64(7 * 1024 * 1024 * 1024),
+			}})
 		case r.URL.Path == "/v1/sandboxes" && r.Method == http.MethodGet:
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "next_cursor": ""})
 		case r.URL.Path == "/v1/sandboxes" && r.Method == http.MethodPost:
@@ -78,6 +85,21 @@ func TestAPI_AllEndpoints(t *testing.T) {
 	mustStatus(t, http.MethodDelete, orch.URL+"/api/v1/sandboxes/obj-1", nil, 200)
 }
 
+func TestAPI_DeleteNode_ForceSkipsNodeAPICalls(t *testing.T) {
+	svc := newService(t)
+	defer svc.Close()
+	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: "127.0.0.1", Port: 1}, "api"); err != nil {
+		t.Fatalf("register node err=%v", err)
+	}
+
+	lg, _ := logging.New(logging.Config{}, logging.Options{Service: "test"})
+	orch := httptest.NewServer(ohttp.NewRouter(svc, orcfg.Config{}, lg))
+	defer orch.Close()
+
+	mustStatus(t, http.MethodDelete, orch.URL+"/api/v1/nodes/n1", nil, 500)
+	mustStatus(t, http.MethodDelete, orch.URL+"/api/v1/nodes/n1?force=true", nil, 200)
+}
+
 func newService(t *testing.T) *service.Service {
 	t.Helper()
 	cfg := orcfg.Config{
@@ -88,8 +110,12 @@ func newService(t *testing.T) *service.Service {
 		ResourceSyncInterval:     time.Second,
 		ResourcePersistMinInt:    time.Millisecond,
 		ResourcePersistMaxInt:    time.Second,
-		ReadySuccessThreshold:    2,
-		NotReadyFailureThreshold: 2,
+		ReadySuccessThreshold:    1,
+		NotReadyFailureThreshold: 1,
+		SchedulerInterval:        50 * time.Millisecond,
+		ReconcileInterval:        50 * time.Millisecond,
+		HostPortMin:              10000,
+		HostPortMax:              10100,
 		ShutdownTimeout:          time.Second,
 	}
 	s, err := service.New(cfg)

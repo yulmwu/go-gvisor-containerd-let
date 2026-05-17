@@ -130,12 +130,24 @@ func (h *Handler) GetNode(c *gin.Context) {
 // @Tags orchestrator-node
 // @Produce json
 // @Param name path string true "Node name"
+// @Param force query bool false "Force delete without node API calls (use only when node is already gone)"
 // @Success 200 {object} DeleteNodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/nodes/{name} [delete]
 func (h *Handler) DeleteNode(c *gin.Context) {
-	if err := h.svc.DeleteNode(c.Request.Context(), c.Param("name")); err != nil {
+	force := false
+	if raw := strings.TrimSpace(c.Query("force")); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid force query; use true/false"})
+			return
+		}
+
+		force = v
+	}
+
+	if err := h.svc.DeleteNodeForce(c.Request.Context(), c.Param("name"), force); err != nil {
 		if errors.Is(err, service.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return

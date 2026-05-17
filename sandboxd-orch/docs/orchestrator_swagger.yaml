@@ -326,6 +326,10 @@ paths:
         name: name
         required: true
         type: string
+      - description: Force delete without node API calls (use only when node is already gone)
+        in: query
+        name: force
+        type: boolean
       produces:
       - application/json
       responses:
