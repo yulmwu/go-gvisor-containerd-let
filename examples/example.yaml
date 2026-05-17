@@ -1,0 +1,21 @@
+# wargame_pwntools_basic_test_v4:latest
+
+apiVersion: sandboxd.o/v1
+kind: Sandbox
+id: sbx-wordpress-demo
+spec:
+  egress: true
+  ttl_seconds: 3600
+  ports:
+    - host_port: 0
+      container_port: 31337
+      protocol: tcp
+  containers:
+    - name: pwntools_basic_test_v4
+      image: wargame_pwntools_basic_test_v4:latest
+      args: []
+      env: []
+      work_dir: ""
+      resource:
+        cpu: 50m
+        memory: 64Mi

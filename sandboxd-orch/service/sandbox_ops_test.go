@@ -725,7 +725,7 @@ func TestRunSandboxStatusSyncOnce_MarksMissingFailed(t *testing.T) {
 		case r.URL.Path == "/v1/node/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses":
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "missing": []string{"sbx-missing"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "missing": []string{"sbx-missing", "sbx-scheduled-missing"}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -762,6 +762,29 @@ func TestRunSandboxStatusSyncOnce_MarksMissingFailed(t *testing.T) {
 
 	if got.Status.LastError != "deleted on sbxlet node" {
 		t.Fatalf("last_error=%q", got.Status.LastError)
+	}
+
+	scheduled := types.Sandbox{
+		ID: "sbx-scheduled-missing",
+		Spec: types.SandboxSpec{
+			Containers: []types.SandboxContainerSpec{{Name: "c1", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+		Status:    types.SandboxStatus{Phase: types.SandboxPhaseScheduled, NodeName: "n1"},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.sbxRepo.CreateSandbox(context.Background(), scheduled); err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSandboxStatusSyncOnce(context.Background())
+	keep, err := s.GetSandbox(context.Background(), "sbx-scheduled-missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if keep.Status.Phase != types.SandboxPhaseScheduled {
+		t.Fatalf("scheduled sandbox must not be failed by missing during create window, got=%s", keep.Status.Phase)
 	}
 }
 
@@ -893,12 +916,12 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 }
 
 func TestFindMissing(t *testing.T) {
-	if _, ok := findMissing([]string{"a", "b"}, "c"); ok {
+	if ok := findMissing([]string{"a", "b"}, "c"); ok {
 		t.Fatal("expected not found")
 	}
 
-	if idx, ok := findMissing([]string{"a", "b"}, "b"); !ok || idx != 1 {
-		t.Fatalf("unexpected idx=%d ok=%v", idx, ok)
+	if ok := findMissing([]string{"a", "b"}, "b"); !ok {
+		t.Fatal("expected found")
 	}
 }
 

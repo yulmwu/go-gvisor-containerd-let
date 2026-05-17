@@ -551,11 +551,11 @@ func (s *Service) runSandboxStatusSyncOnce(ctx context.Context) {
 	var wg sync.WaitGroup
 
 	for nodeName, sandboxes := range grouped {
+		sem <- struct{}{}
 		nodeName, sandboxes := nodeName, sandboxes
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			c, _, err := s.SandboxOpClientForNode(ctx, nodeName)
@@ -604,13 +604,18 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 	}
 
 	for _, sbx := range sandboxes {
-		if _, missing := findMissing(resp.Missing, sbx.ID); missing {
+		if findMissing(resp.Missing, sbx.ID) {
 			latest, err := s.sbxRepo.GetSandbox(ctx, sbx.ID)
 			if err != nil {
 				continue
 			}
 
 			if latest.Status.Phase == types.SandboxPhaseDeleting {
+				continue
+			}
+
+			// Scheduled sandboxes may not exist on sbxlet yet during create window.
+			if latest.Status.Phase == types.SandboxPhaseScheduled {
 				continue
 			}
 
@@ -643,14 +648,14 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 	}
 }
 
-func findMissing(items []string, id string) (int, bool) {
+func findMissing(items []string, id string) bool {
 	for i := range items {
 		if items[i] == id {
-			return i, true
+			return true
 		}
 	}
 
-	return -1, false
+	return false
 }
 
 func mergeSandboxPhaseWithNodeState(cur types.SandboxStatus, st client.SandboxSyncStatus) (types.SandboxStatus, bool) {
