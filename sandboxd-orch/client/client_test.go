@@ -84,6 +84,15 @@ func TestClient_DoErrorBranches(t *testing.T) {
 
 func TestClient_SandboxOps(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/sandboxes/statuses" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "s1", "phase": "running"},
+				},
+				"missing": []string{},
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "path": r.URL.Path, "query": r.URL.RawQuery})
 	}))
 	defer ts.Close()
@@ -112,5 +121,14 @@ func TestClient_SandboxOps(t *testing.T) {
 
 	if _, err := c.GetContainerLogs(ctx, "s1", "c", "10", 100); err != nil {
 		t.Fatal(err)
+	}
+
+	st, err := c.SandboxStatuses(ctx, []string{"s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(st.Items) != 1 || st.Items[0].ID != "s1" {
+		t.Fatalf("unexpected sandbox statuses: %+v", st)
 	}
 }

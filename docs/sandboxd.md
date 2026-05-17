@@ -308,6 +308,49 @@ Base URL: `http://localhost:8080`
 }
 ```
 
+### Batch Sandbox Status 
+
+- `POST /v1/sandboxes/statuses`
+- Purpose: return minimal status for orchestrator synchronization with low payload.
+- Max IDs per request: `200`
+
+**Request**
+
+```json
+{
+    "ids": ["sbx-a", "sbx-b"]
+}
+```
+
+**Response**
+
+```json
+{
+    "items": [
+        {
+            "id": "sbx-a",
+            "phase": "running",
+            "error": "",
+            "unhealthy_containers": []
+        },
+        {
+            "id": "sbx-b",
+            "phase": "error",
+            "error": "pull image \"docker.io/library/nginx:bad\": ...",
+            "unhealthy_containers": [
+                {
+                    "name": "web",
+                    "phase": "error",
+                    "error": "container not found",
+                    "task_status": "not_found"
+                }
+            ]
+        }
+    ],
+    "missing": ["sbx-missing"]
+}
+```
+
 ### Container Logs (Cursor Pagination)
 
 - `GET /v1/sandboxes/{id}/containers/{name}/logs?cursor=<byte_offset>&limit=<line_count>`

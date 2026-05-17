@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"sandboxd-o/sandboxd-orch/client"
 	"sandboxd-o/sandboxd-orch/config"
 	"sandboxd-o/sandboxd-orch/types"
 )
@@ -672,4 +673,239 @@ func TestFinalizeSandboxDelete_ReleasePortsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected release ports error on canceled context")
 	}
+}
+
+func TestMergeSandboxPhaseWithNodeState(t *testing.T) {
+	t.Run("running clears error", func(t *testing.T) {
+		cur := types.SandboxStatus{Phase: types.SandboxPhaseScheduled, LastError: "old"}
+		next, changed := mergeSandboxPhaseWithNodeState(cur, clientStatus("s1", "running", "", nil))
+		if !changed || next.Phase != types.SandboxPhaseRunning || next.LastError != "" {
+			t.Fatalf("unexpected next=%+v changed=%v", next, changed)
+		}
+	})
+
+	t.Run("sandbox error to failed", func(t *testing.T) {
+		cur := types.SandboxStatus{Phase: types.SandboxPhaseRunning}
+		next, changed := mergeSandboxPhaseWithNodeState(cur, clientStatus("s1", "error", "pull failed", nil))
+		if !changed || next.Phase != types.SandboxPhaseFailed || next.LastError == "" {
+			t.Fatalf("unexpected next=%+v changed=%v", next, changed)
+		}
+	})
+
+	t.Run("container unhealthy to failed", func(t *testing.T) {
+		cur := types.SandboxStatus{Phase: types.SandboxPhaseRunning}
+		next, changed := mergeSandboxPhaseWithNodeState(cur, clientStatus("s1", "running", "", []containerStatus{{Name: "c1", Phase: "stopped"}}))
+		if !changed || next.Phase != types.SandboxPhaseFailed {
+			t.Fatalf("unexpected next=%+v changed=%v", next, changed)
+		}
+	})
+
+	t.Run("creating from running goes scheduled", func(t *testing.T) {
+		cur := types.SandboxStatus{Phase: types.SandboxPhaseRunning}
+		next, changed := mergeSandboxPhaseWithNodeState(cur, clientStatus("s1", "creating", "", nil))
+		if !changed || next.Phase != types.SandboxPhaseScheduled {
+			t.Fatalf("unexpected next=%+v changed=%v", next, changed)
+		}
+	})
+
+	t.Run("unknown phase no change", func(t *testing.T) {
+		cur := types.SandboxStatus{Phase: types.SandboxPhaseScheduled}
+		next, changed := mergeSandboxPhaseWithNodeState(cur, clientStatus("s1", "unknown", "", nil))
+		if changed || next.Phase != cur.Phase || next.LastError != cur.LastError {
+			t.Fatalf("unexpected next=%+v changed=%v", next, changed)
+		}
+	})
+}
+
+func TestRunSandboxStatusSyncOnce_MarksMissingFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		case r.URL.Path == "/v1/node/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "missing": []string{"sbx-missing"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+	s.cfg.StatusSyncBatchSize = 50
+	s.cfg.StatusSyncInterval = time.Second
+
+	now := time.Now().UTC()
+	if err := s.sbxRepo.CreateSandbox(context.Background(), types.Sandbox{
+		ID: "sbx-missing",
+		Spec: types.SandboxSpec{
+			Containers: []types.SandboxContainerSpec{{Name: "c1", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+		},
+		Status:    types.SandboxStatus{Phase: types.SandboxPhaseRunning, NodeName: "n1"},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSandboxStatusSyncOnce(context.Background())
+	got, err := s.GetSandbox(context.Background(), "sbx-missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseFailed {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+
+	if got.Status.LastError != "deleted on sbxlet node" {
+		t.Fatalf("last_error=%q", got.Status.LastError)
+	}
+}
+
+func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		case r.URL.Path == "/v1/node/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses":
+			calls++
+			if calls == 1 {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"items": []map[string]any{
+						{"id": "sbx-run", "phase": "running"},
+					},
+					"missing": []string{},
+				})
+				return
+			}
+
+			if calls == 2 {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"items": []map[string]any{
+						{
+							"id":    "sbx-err",
+							"phase": "error",
+							"error": "sandbox error",
+							"unhealthy_containers": []map[string]any{
+								{"name": "app", "phase": "error", "error": "image pull failed"},
+							},
+						},
+					},
+					"missing": []string{},
+				})
+
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "sbx-recover", "phase": "running"},
+				},
+				"missing": []string{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	s := newServiceWithNode(t, server)
+	defer s.Close()
+	s.cfg.StatusSyncBatchSize = 1
+
+	now := time.Now().UTC()
+	makeSandbox := func(id string) types.Sandbox {
+		return types.Sandbox{
+			ID: id,
+			Spec: types.SandboxSpec{
+				Containers: []types.SandboxContainerSpec{{Name: "app", Image: "nginx", Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"}}},
+			},
+			Status:    types.SandboxStatus{Phase: types.SandboxPhaseScheduled, NodeName: "n1"},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+	}
+
+	if err := s.sbxRepo.CreateSandbox(context.Background(), makeSandbox("sbx-run")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.sbxRepo.CreateSandbox(context.Background(), makeSandbox("sbx-err")); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := makeSandbox("sbx-recover")
+	failed.Status.Phase = types.SandboxPhaseFailed
+	failed.Status.LastError = "container app unhealthy (creating)"
+	if err := s.sbxRepo.CreateSandbox(context.Background(), failed); err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSandboxStatusSyncOnce(context.Background())
+
+	if calls != 3 {
+		t.Fatalf("expected 3 batched calls, got=%d", calls)
+	}
+
+	run, _ := s.GetSandbox(context.Background(), "sbx-run")
+	if run.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("sbx-run phase=%s", run.Status.Phase)
+	}
+
+	errSbx, _ := s.GetSandbox(context.Background(), "sbx-err")
+	if errSbx.Status.Phase != types.SandboxPhaseFailed {
+		t.Fatalf("sbx-err phase=%s", errSbx.Status.Phase)
+	}
+
+	if errSbx.Status.LastError == "" {
+		t.Fatal("expected failed reason for sbx-err")
+	}
+
+	recovered, _ := s.GetSandbox(context.Background(), "sbx-recover")
+	if recovered.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("sbx-recover phase=%s", recovered.Status.Phase)
+	}
+	if recovered.Status.LastError != "" {
+		t.Fatalf("sbx-recover last_error=%q", recovered.Status.LastError)
+	}
+}
+
+func TestFindMissing(t *testing.T) {
+	if _, ok := findMissing([]string{"a", "b"}, "c"); ok {
+		t.Fatal("expected not found")
+	}
+
+	if idx, ok := findMissing([]string{"a", "b"}, "b"); !ok || idx != 1 {
+		t.Fatalf("unexpected idx=%d ok=%v", idx, ok)
+	}
+}
+
+type containerStatus struct {
+	Name  string
+	Phase string
+	Error string
+}
+
+func clientStatus(id, phase, err string, containers []containerStatus) client.SandboxSyncStatus {
+	out := client.SandboxSyncStatus{
+		ID:    id,
+		Phase: phase,
+		Error: err,
+	}
+
+	for _, c := range containers {
+		out.UnhealthyContainers = append(out.UnhealthyContainers, client.ContainerSyncStatus{
+			Name:  c.Name,
+			Phase: c.Phase,
+			Error: c.Error,
+		})
+	}
+
+	return out
 }

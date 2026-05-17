@@ -80,3 +80,42 @@ func TestLoad_SandboxOpTimeout(t *testing.T) {
 		t.Fatalf("SandboxOpTimeout default=%s", cfg.SandboxOpTimeout)
 	}
 }
+
+func TestLoad_StatusSyncDefaultsAndOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "apiserver.yaml")
+	if err := os.WriteFile(cfgFile, []byte("listenAddress: ':18082'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("ORCH_CONFIG_PATH", cfgFile)
+	t.Setenv("ORCH_SQLITE_PATH", filepath.Join(dir, "orch.db"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load err=%v", err)
+	}
+
+	if cfg.StatusSyncInterval != 20*time.Second {
+		t.Fatalf("StatusSyncInterval=%s", cfg.StatusSyncInterval)
+	}
+
+	if cfg.StatusSyncBatchSize != 50 {
+		t.Fatalf("StatusSyncBatchSize=%d", cfg.StatusSyncBatchSize)
+	}
+
+	t.Setenv("ORCH_STATUS_SYNC_INTERVAL", "45s")
+	t.Setenv("ORCH_STATUS_SYNC_BATCH_SIZE", "7")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load err=%v", err)
+	}
+
+	if cfg.StatusSyncInterval != 45*time.Second {
+		t.Fatalf("StatusSyncInterval override=%s", cfg.StatusSyncInterval)
+	}
+
+	if cfg.StatusSyncBatchSize != 7 {
+		t.Fatalf("StatusSyncBatchSize override=%d", cfg.StatusSyncBatchSize)
+	}
+}

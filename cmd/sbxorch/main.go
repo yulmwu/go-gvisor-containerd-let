@@ -64,6 +64,7 @@ func main() {
 	svc.StartResourceSyncLoop(ctx)
 	svc.StartSchedulerLoop(ctx)
 	svc.StartSandboxReconcileLoop(ctx)
+	svc.StartSandboxStatusSyncLoop(ctx)
 
 	router := httpserver.NewRouter(svc, cfg, logger)
 	srv := &nethttp.Server{

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"sandboxd-o/sandboxd-let/model"
@@ -131,6 +133,99 @@ func (s *Server) listSandboxes(c *gin.Context) {
 		NextCursor: nextCursor,
 		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
 	})
+}
+
+// sandboxStatuses godoc
+// @Summary Batch get sandbox status summary
+// @Description Returns lightweight sandbox/container status summaries for requested IDs.
+// @Tags sandboxd-sandbox
+// @Accept json
+// @Produce json
+// @Param request body SandboxStatusesRequest true "Sandbox status request"
+// @Success 200 {object} SandboxStatusesResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /v1/sandboxes/statuses [post]
+func (s *Server) sandboxStatuses(c *gin.Context) {
+	var req SandboxStatusesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusOK, SandboxStatusesResponse{Items: []SandboxSyncStatus{}, Missing: []string{}})
+		return
+	}
+
+	seen := make(map[string]struct{}, len(req.IDs))
+	ids := make([]string, 0, len(req.IDs))
+	for _, raw := range req.IDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+
+		if _, exists := seen[id]; exists {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) > 200 {
+		respondErrorMessage(c, http.StatusBadRequest, "too many ids (max 200)")
+		return
+	}
+
+	items := make([]SandboxSyncStatus, 0, len(ids))
+	missing := make([]string, 0)
+	for _, id := range ids {
+		sbx, err := s.svc.GetSandbox(c.Request.Context(), id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				missing = append(missing, id)
+				continue
+			}
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		items = append(items, toSandboxSyncStatus(sbx))
+	}
+
+	slices.Sort(missing)
+	c.JSON(http.StatusOK, SandboxStatusesResponse{
+		Items:   items,
+		Missing: missing,
+	})
+}
+
+func toSandboxSyncStatus(sbx *model.Sandbox) SandboxSyncStatus {
+	out := SandboxSyncStatus{
+		ID:    sbx.ID,
+		Phase: sbx.Phase,
+		Error: sbx.Error,
+	}
+
+	if len(sbx.Containers) == 0 {
+		return out
+	}
+
+	for _, st := range sbx.Containers {
+		phase := strings.ToLower(strings.TrimSpace(st.Phase))
+		if (phase == "running" || phase == "creating") && strings.TrimSpace(st.Error) == "" {
+			continue
+		}
+		out.UnhealthyContainers = append(out.UnhealthyContainers, ContainerSyncStatus{
+			Name:       st.Name,
+			Phase:      st.Phase,
+			Error:      st.Error,
+			TaskStatus: st.TaskStatus,
+		})
+	}
+	return out
 }
 
 // deleteSandbox godoc

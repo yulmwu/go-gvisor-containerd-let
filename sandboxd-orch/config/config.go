@@ -31,6 +31,8 @@ const (
 	defaultShutdownTimeout       = 5 * time.Second
 	defaultSchedulerInterval     = 3 * time.Second
 	defaultReconcileInterval     = 5 * time.Second
+	defaultStatusSyncInterval    = 20 * time.Second
+	defaultStatusSyncBatchSize   = 50
 	defaultPortMin               = 10000
 	defaultPortMax               = 32767
 	defaultCreateRPS             = 20.0
@@ -54,6 +56,8 @@ type Config struct {
 	ShutdownTimeout          time.Duration
 	SchedulerInterval        time.Duration
 	ReconcileInterval        time.Duration
+	StatusSyncInterval       time.Duration
+	StatusSyncBatchSize      int
 	HostPortMin              int
 	HostPortMax              int
 	CreateRPS                float64
@@ -96,6 +100,8 @@ func Load() (Config, error) {
 		ShutdownTimeout:          envutil.GetDuration("ORCH_SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 		SchedulerInterval:        envutil.GetDuration("ORCH_SCHEDULER_INTERVAL", defaultSchedulerInterval),
 		ReconcileInterval:        envutil.GetDuration("ORCH_RECONCILE_INTERVAL", defaultReconcileInterval),
+		StatusSyncInterval:       envutil.GetDuration("ORCH_STATUS_SYNC_INTERVAL", defaultStatusSyncInterval),
+		StatusSyncBatchSize:      envutil.GetInt("ORCH_STATUS_SYNC_BATCH_SIZE", defaultStatusSyncBatchSize),
 		HostPortMin:              envutil.GetInt("ORCH_HOSTPORT_MIN", defaultPortMin),
 		HostPortMax:              envutil.GetInt("ORCH_HOSTPORT_MAX", defaultPortMax),
 		CreateRPS:                envutil.GetFloat64("ORCH_CREATE_RPS", defaultCreateRPS),
@@ -133,6 +139,14 @@ func Load() (Config, error) {
 
 	if cfg.ReconcileInterval <= 0 {
 		cfg.ReconcileInterval = defaultReconcileInterval
+	}
+
+	if cfg.StatusSyncInterval <= 0 {
+		cfg.StatusSyncInterval = defaultStatusSyncInterval
+	}
+
+	if cfg.StatusSyncBatchSize < 1 {
+		cfg.StatusSyncBatchSize = defaultStatusSyncBatchSize
 	}
 
 	if cfg.SandboxOpTimeout <= 0 {

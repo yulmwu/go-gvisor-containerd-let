@@ -34,6 +34,29 @@ type ListSandboxesResponse struct {
 	ExternalIP string           `json:"external_ip,omitempty"`
 }
 
+type SandboxStatusesRequest struct {
+	IDs []string `json:"ids"`
+}
+
+type ContainerSyncStatus struct {
+	Name       string `json:"name"`
+	Phase      string `json:"phase"`
+	Error      string `json:"error,omitempty"`
+	TaskStatus string `json:"task_status,omitempty"`
+}
+
+type SandboxSyncStatus struct {
+	ID                  string                `json:"id"`
+	Phase               string                `json:"phase"`
+	Error               string                `json:"error,omitempty"`
+	UnhealthyContainers []ContainerSyncStatus `json:"unhealthy_containers,omitempty"`
+}
+
+type SandboxStatusesResponse struct {
+	Items   []SandboxSyncStatus `json:"items"`
+	Missing []string            `json:"missing,omitempty"`
+}
+
 type DeleteSandboxResponse struct {
 	ID         string `json:"id"`
 	Phase      string `json:"phase"`
