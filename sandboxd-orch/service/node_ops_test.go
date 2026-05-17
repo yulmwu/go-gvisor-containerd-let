@@ -171,7 +171,7 @@ func TestProbeNodeStateTransitionsAndResourceSync(t *testing.T) {
 		case "/healthz":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		case "/v1/node/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000, "allocatable_cpu_milli": 900}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "external_ip": "203.0.113.10", "resources": map[string]any{"capacity_cpu_milli": 1000, "allocatable_cpu_milli": 900}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -197,6 +197,11 @@ func TestProbeNodeStateTransitionsAndResourceSync(t *testing.T) {
 	r.mu.Unlock()
 	if updates != 1 {
 		t.Fatalf("resource updates=%d want=1", updates)
+	}
+
+	gotAfterSync, _ := r.GetNode(context.Background(), "n1")
+	if gotAfterSync.Resources.ExternalIP != "203.0.113.10" {
+		t.Fatalf("external ip=%q", gotAfterSync.Resources.ExternalIP)
 	}
 
 	bad := types.Node{Name: "n2", SbxletBaseURL: "http://127.0.0.1:1", State: types.NodeStateUnknown}

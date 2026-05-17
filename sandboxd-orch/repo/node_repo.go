@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS node_resources (
   available_cpu_milli INTEGER NOT NULL DEFAULT 0,
   available_memory_bytes INTEGER NOT NULL DEFAULT 0,
   max_alloc_percent INTEGER NOT NULL DEFAULT 0,
+  external_ip TEXT NOT NULL DEFAULT '',
   resource_updated_at TEXT,
   updated_at TEXT NOT NULL
 );
@@ -206,6 +207,7 @@ func (r *SQLiteNodeRepo) GetNode(ctx context.Context, name string) (*types.Node,
 COALESCE(s.state, 'Unknown'), COALESCE(s.success_streak,0), COALESCE(s.failure_streak,0), COALESCE(s.last_error,''), s.last_heartbeat_at,
 COALESCE(r.capacity_cpu_milli,0), COALESCE(r.capacity_memory_bytes,0), COALESCE(r.allocatable_cpu_milli,0), COALESCE(r.allocatable_memory_bytes,0),
 COALESCE(r.used_cpu_milli,0), COALESCE(r.used_memory_bytes,0), COALESCE(r.available_cpu_milli,0), COALESCE(r.available_memory_bytes,0), COALESCE(r.max_alloc_percent,0), r.resource_updated_at,
+COALESCE(r.external_ip,''),
 n.created_at, n.updated_at
 FROM nodes n
 LEFT JOIN node_status s ON s.name=n.name
@@ -219,6 +221,7 @@ func (r *SQLiteNodeRepo) ListNodes(ctx context.Context) ([]types.Node, error) {
 COALESCE(s.state, 'Unknown'), COALESCE(s.success_streak,0), COALESCE(s.failure_streak,0), COALESCE(s.last_error,''), s.last_heartbeat_at,
 COALESCE(r.capacity_cpu_milli,0), COALESCE(r.capacity_memory_bytes,0), COALESCE(r.allocatable_cpu_milli,0), COALESCE(r.allocatable_memory_bytes,0),
 COALESCE(r.used_cpu_milli,0), COALESCE(r.used_memory_bytes,0), COALESCE(r.available_cpu_milli,0), COALESCE(r.available_memory_bytes,0), COALESCE(r.max_alloc_percent,0), r.resource_updated_at,
+COALESCE(r.external_ip,''),
 n.created_at, n.updated_at
 FROM nodes n
 LEFT JOIN node_status s ON s.name=n.name
@@ -286,9 +289,10 @@ used_memory_bytes,
 available_cpu_milli,
 available_memory_bytes,
 max_alloc_percent,
+external_ip,
 resource_updated_at,
 updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
 capacity_cpu_milli=excluded.capacity_cpu_milli,
 capacity_memory_bytes=excluded.capacity_memory_bytes,
@@ -299,6 +303,7 @@ used_memory_bytes=excluded.used_memory_bytes,
 available_cpu_milli=excluded.available_cpu_milli,
 available_memory_bytes=excluded.available_memory_bytes,
 max_alloc_percent=excluded.max_alloc_percent,
+external_ip=excluded.external_ip,
 resource_updated_at=excluded.resource_updated_at,
 updated_at=excluded.updated_at`
 	_, err := r.db.ExecContext(ctx, q,
@@ -312,6 +317,7 @@ updated_at=excluded.updated_at`
 		res.AvailableCPUMilli,
 		res.AvailableMemory,
 		res.MaxAllocPercent,
+		res.ExternalIP,
 		resUpdated,
 		updated,
 	)
@@ -370,6 +376,7 @@ func scanRowScanner(s scanner) (types.Node, error) {
 		&n.Resources.UsedCPUMilli, &n.Resources.UsedMemoryBytes,
 		&n.Resources.AvailableCPUMilli, &n.Resources.AvailableMemory,
 		&n.Resources.MaxAllocPercent, &resUpdated,
+		&n.Resources.ExternalIP,
 		&created, &updated,
 	); err != nil {
 		return n, err

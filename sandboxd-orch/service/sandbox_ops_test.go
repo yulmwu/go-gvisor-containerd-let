@@ -795,11 +795,12 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 		case r.URL.Path == "/healthz":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		case r.URL.Path == "/v1/node/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "external_ip": "203.0.113.10", "resources": map[string]any{"capacity_cpu_milli": 1000}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses":
 			calls++
 			if calls == 1 {
 				_ = json.NewEncoder(w).Encode(map[string]any{
+					"external_ip": "203.0.113.10",
 					"items": []map[string]any{
 						{"id": "sbx-run", "phase": "running"},
 					},
@@ -810,6 +811,7 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 
 			if calls == 2 {
 				_ = json.NewEncoder(w).Encode(map[string]any{
+					"external_ip": "203.0.113.10",
 					"items": []map[string]any{
 						{
 							"id":    "sbx-err",
@@ -827,6 +829,7 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 			}
 
 			_ = json.NewEncoder(w).Encode(map[string]any{
+				"external_ip": "203.0.113.10",
 				"items": []map[string]any{
 					{"id": "sbx-recover", "phase": "running"},
 				},
@@ -887,6 +890,9 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 	if run.Status.Phase != types.SandboxPhaseRunning {
 		t.Fatalf("sbx-run phase=%s", run.Status.Phase)
 	}
+	if run.Status.ExternalIP != "203.0.113.10" {
+		t.Fatalf("sbx-run external_ip=%q", run.Status.ExternalIP)
+	}
 
 	errSbx, _ := s.GetSandbox(context.Background(), "sbx-err")
 	if errSbx.Status.Phase != types.SandboxPhaseFailed {
@@ -922,6 +928,15 @@ func TestFindMissing(t *testing.T) {
 
 	if ok := findMissing([]string{"a", "b"}, "b"); !ok {
 		t.Fatal("expected found")
+	}
+}
+
+func TestInferSandboxExternalIP(t *testing.T) {
+	if got := inferSandboxExternalIP(" 203.0.113.10 ", "198.51.100.2"); got != "203.0.113.10" {
+		t.Fatalf("prefer response ip, got=%q", got)
+	}
+	if got := inferSandboxExternalIP(" ", " 198.51.100.2 "); got != "198.51.100.2" {
+		t.Fatalf("fallback ip, got=%q", got)
 	}
 }
 

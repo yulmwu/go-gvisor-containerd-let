@@ -24,8 +24,9 @@ type SandboxSyncStatus struct {
 }
 
 type SandboxStatusesResponse struct {
-	Items   []SandboxSyncStatus `json:"items"`
-	Missing []string            `json:"missing,omitempty"`
+	Items      []SandboxSyncStatus `json:"items"`
+	Missing    []string            `json:"missing,omitempty"`
+	ExternalIP string              `json:"external_ip,omitempty"`
 }
 
 func (c *Client) Reconcile(ctx context.Context) (map[string]any, error) {

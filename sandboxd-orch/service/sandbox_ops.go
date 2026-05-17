@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -274,6 +275,7 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		return
 	}
 
+	fresh.Status.ExternalIP = strings.TrimSpace(chosen.node.Resources.ExternalIP)
 	if err := s.createSandboxOnNode(ctx, *fresh); err != nil {
 		fresh.Status.Phase = types.SandboxPhaseFailed
 		fresh.Status.LastError = err.Error()
@@ -553,9 +555,7 @@ func (s *Service) runSandboxStatusSyncOnce(ctx context.Context) {
 	for nodeName, sandboxes := range grouped {
 		sem <- struct{}{}
 		nodeName, sandboxes := nodeName, sandboxes
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 
 			c, _, err := s.SandboxOpClientForNode(ctx, nodeName)
@@ -580,7 +580,7 @@ func (s *Service) runSandboxStatusSyncOnce(ctx context.Context) {
 				s.syncNodeSandboxBatch(syncCtx, c, nodeName, sandboxes[i:end])
 				cancel()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -622,6 +622,7 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 			st := latest.Status
 			st.Phase = types.SandboxPhaseFailed
 			st.LastError = "deleted on sbxlet node"
+			st.ExternalIP = inferSandboxExternalIP(resp.ExternalIP, latest.Status.ExternalIP)
 			_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, st)
 			continue
 		}
@@ -642,6 +643,11 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 		}
 
 		next, changed := mergeSandboxPhaseWithNodeState(latest.Status, nodeSt)
+		if ext := inferSandboxExternalIP(resp.ExternalIP, latest.Status.ExternalIP); next.ExternalIP != ext {
+			next.ExternalIP = ext
+			changed = true
+		}
+
 		if changed {
 			_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, next)
 		}
@@ -649,13 +655,7 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 }
 
 func findMissing(items []string, id string) bool {
-	for i := range items {
-		if items[i] == id {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(items, id)
 }
 
 func mergeSandboxPhaseWithNodeState(cur types.SandboxStatus, st client.SandboxSyncStatus) (types.SandboxStatus, bool) {
@@ -738,4 +738,13 @@ func mergeSandboxPhaseWithNodeState(cur types.SandboxStatus, st client.SandboxSy
 	}
 
 	return next, changed
+}
+
+func inferSandboxExternalIP(fromNodeResp, fallback string) string {
+	ip := strings.TrimSpace(fromNodeResp)
+	if ip != "" {
+		return ip
+	}
+
+	return strings.TrimSpace(fallback)
 }

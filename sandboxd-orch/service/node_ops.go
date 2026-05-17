@@ -99,6 +99,7 @@ func (s *Service) detachNodeSandboxes(ctx context.Context, nodeName string, forc
 			st.Phase = types.SandboxPhaseFailed
 			st.LastError = "node removed"
 			st.NodeName = ""
+			st.ExternalIP = ""
 			st.AssignedPorts = nil
 			_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, st)
 		}
@@ -190,6 +191,7 @@ func (s *Service) syncNodeResources(ctx context.Context, n types.Node) {
 	}
 
 	res := st.Resources
+	res.ExternalIP = strings.TrimSpace(st.ExternalIP)
 	s.resources.PutCurrent(n.Name, res)
 	now := time.Now().UTC()
 	if !s.resources.ShouldPersist(n.Name, now, s.cfg.ResourcePersistMinInt, s.cfg.ResourcePersistMaxInt) {

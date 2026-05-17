@@ -42,7 +42,7 @@ func (s *Server) nodeStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, NodeStatusResponse{OK: true, Resources: snap})
+	c.JSON(http.StatusOK, NodeStatusResponse{OK: true, Resources: snap, ExternalIP: s.ipSvc.Lookup(c.Request.Context())})
 }
 
 // createSandbox godoc
@@ -154,7 +154,7 @@ func (s *Server) sandboxStatuses(c *gin.Context) {
 	}
 
 	if len(req.IDs) == 0 {
-		c.JSON(http.StatusOK, SandboxStatusesResponse{Items: []SandboxSyncStatus{}, Missing: []string{}})
+		c.JSON(http.StatusOK, SandboxStatusesResponse{Items: []SandboxSyncStatus{}, Missing: []string{}, ExternalIP: s.ipSvc.Lookup(c.Request.Context())})
 		return
 	}
 
@@ -197,8 +197,9 @@ func (s *Server) sandboxStatuses(c *gin.Context) {
 
 	slices.Sort(missing)
 	c.JSON(http.StatusOK, SandboxStatusesResponse{
-		Items:   items,
-		Missing: missing,
+		Items:      items,
+		Missing:    missing,
+		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
 	})
 }
 

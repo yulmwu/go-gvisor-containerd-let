@@ -14,8 +14,9 @@ type HealthResponse struct {
 }
 
 type NodeStatusResponse struct {
-	OK        bool                       `json:"ok"`
-	Resources model.NodeResourceSnapshot `json:"resources"`
+	OK         bool                       `json:"ok"`
+	Resources  model.NodeResourceSnapshot `json:"resources"`
+	ExternalIP string                     `json:"external_ip,omitempty"`
 }
 
 type CreateSandboxResponse struct {
@@ -53,8 +54,9 @@ type SandboxSyncStatus struct {
 }
 
 type SandboxStatusesResponse struct {
-	Items   []SandboxSyncStatus `json:"items"`
-	Missing []string            `json:"missing,omitempty"`
+	Items      []SandboxSyncStatus `json:"items"`
+	Missing    []string            `json:"missing,omitempty"`
+	ExternalIP string              `json:"external_ip,omitempty"`
 }
 
 type DeleteSandboxResponse struct {

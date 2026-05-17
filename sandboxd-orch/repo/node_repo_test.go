@@ -36,7 +36,7 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 		t.Fatalf("UpdateHeartbeat err=%v", err)
 	}
 
-	res := types.NodeResources{CapacityCPUMilli: 1000, AllocatableCPUMilli: 900}
+	res := types.NodeResources{CapacityCPUMilli: 1000, AllocatableCPUMilli: 900, ExternalIP: "203.0.113.10"}
 	if err := r.UpdateNodeResources(ctx, "n1", res); err != nil {
 		t.Fatalf("UpdateNodeResources err=%v", err)
 	}
@@ -48,6 +48,10 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 
 	if len(list) != 1 || list[0].Resources.CapacityCPUMilli != 1000 {
 		t.Fatalf("unexpected list: %+v", list)
+	}
+
+	if list[0].Resources.ExternalIP != "203.0.113.10" {
+		t.Fatalf("external ip=%q", list[0].Resources.ExternalIP)
 	}
 
 	if err := r.DeleteNode(ctx, "n1"); err != nil {

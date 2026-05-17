@@ -144,7 +144,8 @@ Get a single node.
         "resources": {
             "available_cpu_milli": 3500,
             "available_memory_bytes": 14904602214,
-            "max_alloc_percent": 90
+            "max_alloc_percent": 90,
+            "external_ip": "203.0.113.10"
         }
     }
 }
@@ -328,6 +329,7 @@ List all control-plane sandbox objects.
             "status": {
                 "phase": "Running",
                 "node_name": "node-a",
+                "external_ip": "203.0.113.10",
                 "assigned_ports": [
                     {
                         "host_port": 10000,
@@ -360,6 +362,7 @@ Get one control-plane sandbox object.
         "status": {
             "phase": "Running",
             "node_name": "node-a",
+            "external_ip": "203.0.113.10",
             "assigned_ports": [
                 {
                     "host_port": 10000,
@@ -560,6 +563,12 @@ Resolved host port mapping used by scheduler and runtime provisioning:
 - `host_port`: selected host-side port (dynamic if `0` requested)
 - `container_port`: target container port
 - `protocol`: `tcp` or `udp`
+
+### Node `resources.external_ip` and Sandbox `status.external_ip`
+
+- `resources.external_ip`: last known external/public IP synchronized from sbxlet node status.
+- `status.external_ip`: node external IP snapshot copied to each sandbox status during scheduling/status-sync.
+- Source of truth is orchestrator DB (node resource sync + sandbox status sync), so responses can still include the last synchronized value even when sbxlet is temporarily unreachable.
 
 ## Environment Variables
 

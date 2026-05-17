@@ -18,7 +18,7 @@ func TestClient_HealthAndNodeStatus(t *testing.T) {
 		case "/healthz":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		case "/v1/node/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "resources": map[string]any{"capacity_cpu_milli": 1000}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "external_ip": "203.0.113.10", "resources": map[string]any{"capacity_cpu_milli": 1000}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -37,6 +37,10 @@ func TestClient_HealthAndNodeStatus(t *testing.T) {
 
 	if st.Resources.CapacityCPUMilli != 1000 {
 		t.Fatalf("capacity=%d", st.Resources.CapacityCPUMilli)
+	}
+
+	if st.ExternalIP != "203.0.113.10" {
+		t.Fatalf("external ip=%q", st.ExternalIP)
 	}
 }
 

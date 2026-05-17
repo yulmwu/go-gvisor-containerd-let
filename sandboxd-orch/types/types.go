@@ -45,6 +45,7 @@ type NodeResources struct {
 	AvailableCPUMilli   int64      `json:"available_cpu_milli"`
 	AvailableMemory     int64      `json:"available_memory_bytes"`
 	MaxAllocPercent     int        `json:"max_alloc_percent"`
+	ExternalIP          string     `json:"external_ip,omitempty"`
 	UpdatedAt           *time.Time `json:"updated_at,omitempty"`
 }
 
@@ -104,6 +105,7 @@ type SandboxPortSpec struct {
 type SandboxStatus struct {
 	Phase         SandboxPhase        `json:"phase"`
 	NodeName      string              `json:"node_name,omitempty"`
+	ExternalIP    string              `json:"external_ip,omitempty"`
 	AssignedPorts []SandboxPortAssign `json:"assigned_ports,omitempty"`
 	SandboxdID    string              `json:"sandboxd_id,omitempty"`
 	ExpireAt      *time.Time          `json:"expire_at,omitempty"`
