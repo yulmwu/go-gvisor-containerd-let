@@ -20,7 +20,7 @@ help:
 	@echo "  make vet                - go vet ./..."
 	@echo "  make test               - go test ./..."
 	@echo "  make test-cover         - go test with coverage profile (coverage.out)"
-	@echo "  make build              - build sbxlet + sbxorch"
+	@echo "  make build              - build all binaries (sbxlet, sbxorch, sbxctl)"
 	@echo "  make build-sbxlet       - build sbxlet binary"
 	@echo "  make build-sbxorch      - build sbxorch binary"
 	@echo "  make build-sbxctl       - build sbxctl binary"

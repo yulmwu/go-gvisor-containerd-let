@@ -211,6 +211,9 @@ func anyToInt64(v any) int64 {
 	case int64:
 		return t
 	case uint:
+		if uint64(t) > math.MaxInt64 {
+			return math.MaxInt64
+		}
 		return int64(t)
 	case uint8:
 		return int64(t)

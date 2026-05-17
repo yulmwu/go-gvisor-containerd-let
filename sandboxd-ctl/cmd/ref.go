@@ -39,7 +39,12 @@ func parseObjectRef(arg string) (objectRef, error) {
 }
 
 func parseResourceList(arg string) ([]string, error) {
-	parts := strings.Split(strings.TrimSpace(arg), ",")
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return nil, fmt.Errorf("resource is required")
+	}
+
+	parts := strings.Split(arg, ",")
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("resource is required")
 	}

@@ -34,7 +34,7 @@ func main() {
 	logger, err := logging.New(logging.Config{
 		Dir:        strings.TrimSpace(os.Getenv("ORCH_LOG_DIR")),
 		FilePrefix: valueOrDefault(strings.TrimSpace(os.Getenv("ORCH_LOG_FILE_PREFIX")), "orchestrator"),
-	}, logging.Options{Service: "orchestrator", Env: strings.TrimSpace(os.Getenv("APP_ENV")), AddSource: false, Level: slog.LevelDebug})
+	}, logging.Options{Service: "orchestrator", Env: strings.TrimSpace(os.Getenv("APP_ENV")), AddSource: false, Level: slog.LevelInfo})
 	if err != nil {
 		boot := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		boot.Error("orchestrator logging init error", slog.Any("error", err))

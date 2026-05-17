@@ -40,7 +40,6 @@ type Config struct {
 	ProvisionTimeout       time.Duration
 	ContainerCreateTimeout time.Duration
 	ImagePullTimeout       time.Duration
-	Debug                  bool
 }
 
 func DefaultConfig() Config {
@@ -64,7 +63,6 @@ func DefaultConfig() Config {
 		ProvisionTimeout:       envutil.GetDuration("SANDBOX_PROVISION_TIMEOUT", DefaultProvisionTimeout),
 		ContainerCreateTimeout: envutil.GetDuration("SANDBOX_CONTAINER_CREATE_TIMEOUT", DefaultContainerCreateTimeout),
 		ImagePullTimeout:       envutil.GetDuration("SANDBOX_IMAGE_PULL_TIMEOUT", DefaultImagePullTimeout),
-		Debug:                  envutil.GetBool("SANDBOX_DEBUG", false),
 	}
 }
 

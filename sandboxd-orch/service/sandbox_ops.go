@@ -104,9 +104,16 @@ func (s *Service) finalizeSandboxDelete(ctx context.Context, sbx types.Sandbox) 
 	}
 
 	if sbx.Status.NodeName != "" {
-		if err := s.adjustNodeUsageForSandbox(ctx, sbx.Status.NodeName, sbx.Spec, -1); err != nil {
-			slog.Warn("logical resource decrement failed", slog.String("sandbox", sbx.ID), slog.String("node", sbx.Status.NodeName), slog.Any("error", err))
+		nodeName := sbx.Status.NodeName
+		if err := s.sbxRepo.DeleteSandbox(ctx, sbx.ID); err != nil {
+			return err
 		}
+
+		if err := s.adjustNodeUsageForSandbox(ctx, nodeName, sbx.Spec, -1); err != nil {
+			slog.Warn("logical resource decrement failed", slog.String("sandbox", sbx.ID), slog.String("node", nodeName), slog.Any("error", err))
+		}
+
+		return nil
 	}
 
 	return s.sbxRepo.DeleteSandbox(ctx, sbx.ID)
