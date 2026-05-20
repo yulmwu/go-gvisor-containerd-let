@@ -29,6 +29,7 @@ type Config struct {
 	ContainerdAddress      string
 	StateBaseDir           string
 	LockDir                string
+	CgroupParent           string
 	BridgeInterface        string
 	SubnetCIDR             string
 	CNIConfPath            string
@@ -52,6 +53,7 @@ func DefaultConfig() Config {
 		ContainerdAddress:      addr,
 		StateBaseDir:           DefaultStateBaseDir,
 		LockDir:                DefaultLockDir,
+		CgroupParent:           envutil.Get("SANDBOX_CGROUP_PARENT", ""),
 		BridgeInterface:        DefaultBridgeInterface,
 		SubnetCIDR:             DefaultSubnetCIDR,
 		CNIConfPath:            envutil.Get("SANDBOX_CNI_CONF_PATH", DefaultCNIConfPath),
@@ -78,6 +80,7 @@ func WithConfigDefaults(cfg Config) Config {
 	if cfg.LockDir == "" {
 		cfg.LockDir = DefaultLockDir
 	}
+	cfg.CgroupParent = envutil.Get("SANDBOX_CGROUP_PARENT", cfg.CgroupParent)
 
 	if cfg.BridgeInterface == "" {
 		cfg.BridgeInterface = DefaultBridgeInterface

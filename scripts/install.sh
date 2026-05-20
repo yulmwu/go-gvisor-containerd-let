@@ -4,6 +4,9 @@ set -euo pipefail
 CNI_VERSION="v1.9.0"
 ARCH="amd64"
 GVISOR_ARCH="x86_64"
+SHIM_PATCHED_VERSION="patched"
+SHIM_PATCHED_URL_BASE="https://github.com/swualabs/gvisor-shim-patched/releases/download"
+SHIM_INSTALL_PATH="/usr/bin/containerd-shim-runsc-v1"
 SBX_CNI_CONF_DIR="/etc/cni/sandboxd.d"
 SBX_CNI_CONF_FILE="${SBX_CNI_CONF_DIR}/20-sbxnet.conflist"
 
@@ -83,10 +86,12 @@ install_runsc() {
   log "Installing gVisor runsc"
 
   download_gvisor_asset runsc /tmp/runsc
-  download_gvisor_asset containerd-shim-runsc-v1 /tmp/containerd-shim-runsc-v1
+  download_patched_shim /tmp/containerd-shim-runsc-v1
 
   sudo install -m 0755 /tmp/runsc /usr/local/bin/runsc
-  sudo install -m 0755 /tmp/containerd-shim-runsc-v1 /usr/local/bin/containerd-shim-runsc-v1
+  sudo install -m 0755 /tmp/containerd-shim-runsc-v1 "${SHIM_INSTALL_PATH}"
+  # Keep /usr/local/bin path consistent to avoid mixed shim versions on PATH.
+  sudo ln -sfn "${SHIM_INSTALL_PATH}" /usr/local/bin/containerd-shim-runsc-v1
 }
 
 download_gvisor_asset() {
@@ -104,6 +109,16 @@ download_gvisor_asset() {
   done
 
   die "failed to download ${asset}; tried known gVisor release URLs"
+}
+
+download_patched_shim() {
+  local out="$1"
+  local url="${SHIM_PATCHED_URL_BASE}/${SHIM_PATCHED_VERSION}/containerd-shim-runsc-v1"
+  if curl -fsSL -o "${out}" "${url}"; then
+    log "Downloaded patched shim from ${url} (version=${SHIM_PATCHED_VERSION})"
+    return 0
+  fi
+  die "failed to download patched shim from ${url}"
 }
 
 configure_containerd_for_runsc() {

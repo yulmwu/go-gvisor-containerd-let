@@ -248,7 +248,7 @@ func (s *Service) provisionSandboxSync(ctx context.Context, sbx *model.Sandbox, 
 	}()
 
 	pauseCtx, pauseCancel := context.WithTimeout(ctx, s.cfg.ContainerCreateTimeout)
-	podID, assignedIP, podCfg, err := s.createPodSandboxCRI(pauseCtx, sbx)
+	podID, assignedIP, podCfg, err := s.createPodSandboxCRI(pauseCtx, sbx, req.Containers)
 	pauseCancel()
 	if err != nil {
 		sbx.Error = err.Error()
