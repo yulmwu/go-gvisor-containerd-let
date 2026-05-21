@@ -55,14 +55,14 @@ func TestService_RegisterListDelete(t *testing.T) {
 	s := newTestService(t, "")
 	defer s.Close()
 
-	req := types.RegisterNodeRequest{Name: "n1", IP: "127.0.0.1", Port: 18080}
+	req := types.RegisterNodeRequest{ID: "n1", IP: "127.0.0.1", Port: 18080}
 	n, err := s.RegisterNode(context.Background(), req, "api")
 	if err != nil {
 		t.Fatalf("RegisterNode err=%v", err)
 	}
 
-	if n.Name != "n1" {
-		t.Fatalf("name=%s", n.Name)
+	if n.ID != "n1" {
+		t.Fatalf("id=%s", n.ID)
 	}
 
 	list, err := s.ListNodes(context.Background())

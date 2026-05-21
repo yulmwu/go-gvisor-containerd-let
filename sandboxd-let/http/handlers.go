@@ -42,7 +42,7 @@ func (s *Server) nodeStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, NodeStatusResponse{OK: true, Resources: snap, ExternalIP: s.ipSvc.Lookup(c.Request.Context())})
+	c.JSON(http.StatusOK, NodeStatusResponse{OK: true, Resources: snap})
 }
 
 // createSandbox godoc
@@ -75,10 +75,7 @@ func (s *Server) createSandbox(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, CreateSandboxResponse{
-		Sandbox:    sbx,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusAccepted, CreateSandboxResponse{Sandbox: sbx})
 }
 
 // getSandbox godoc
@@ -103,10 +100,7 @@ func (s *Server) getSandbox(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, GetSandboxResponse{
-		Sandbox:    sbx,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, GetSandboxResponse{Sandbox: sbx})
 }
 
 // listSandboxes godoc
@@ -128,11 +122,7 @@ func (s *Server) listSandboxes(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ListSandboxesResponse{
-		Items:      items,
-		NextCursor: nextCursor,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, ListSandboxesResponse{Items: items, NextCursor: nextCursor})
 }
 
 // sandboxStatuses godoc
@@ -154,7 +144,7 @@ func (s *Server) sandboxStatuses(c *gin.Context) {
 	}
 
 	if len(req.IDs) == 0 {
-		c.JSON(http.StatusOK, SandboxStatusesResponse{Items: []SandboxSyncStatus{}, Missing: []string{}, ExternalIP: s.ipSvc.Lookup(c.Request.Context())})
+		c.JSON(http.StatusOK, SandboxStatusesResponse{Items: []SandboxSyncStatus{}, Missing: []string{}})
 		return
 	}
 
@@ -196,16 +186,13 @@ func (s *Server) sandboxStatuses(c *gin.Context) {
 	}
 
 	slices.Sort(missing)
-	c.JSON(http.StatusOK, SandboxStatusesResponse{
-		Items:      items,
-		Missing:    missing,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, SandboxStatusesResponse{Items: items, Missing: missing})
 }
 
 func toSandboxSyncStatus(sbx *model.Sandbox) SandboxSyncStatus {
 	out := SandboxSyncStatus{
 		ID:    sbx.ID,
+		IP:    sbx.IP,
 		Phase: sbx.Phase,
 		Error: sbx.Error,
 	}
@@ -246,11 +233,7 @@ func (s *Server) deleteSandbox(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, DeleteSandboxResponse{
-		ID:         c.Param("id"),
-		Phase:      "deleted",
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, DeleteSandboxResponse{ID: c.Param("id"), Phase: "deleted"})
 }
 
 // reconcile godoc
@@ -269,10 +252,7 @@ func (s *Server) reconcile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ReconcileResponse{
-		OK:         true,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, ReconcileResponse{OK: true})
 }
 
 // getContainerLogs godoc
@@ -319,7 +299,6 @@ func (s *Server) getContainerLogs(c *gin.Context) {
 							NextCursor: "0",
 							HasMore:    false,
 						},
-						ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
 					})
 					return
 				}
@@ -338,10 +317,5 @@ func (s *Server) getContainerLogs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ContainerLogsResponse{
-		SandboxID:  sandboxID,
-		Container:  containerName,
-		Logs:       page,
-		ExternalIP: s.ipSvc.Lookup(c.Request.Context()),
-	})
+	c.JSON(http.StatusOK, ContainerLogsResponse{SandboxID: sandboxID, Container: containerName, Logs: page})
 }

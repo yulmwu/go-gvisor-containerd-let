@@ -29,21 +29,23 @@ Base URL: `http://localhost:8082`
 
 ## Node APIs
 
-### POST /api/v1/nodes/register
+### POST /api/v1/nodes
 
-Register or update a sbxlet node endpoint.
+Create or update a node object.
 
 - Success: `200 OK`
-- Failure: `400 Bad Request` (invalid request body or invalid `name/ip/port`)
+- Failure: `400 Bad Request` (invalid request body or invalid `id/ip/port`)
 - Failure: `500 Internal Server Error` (storage or internal error)
 
 **Request**
 
 ```json
 {
-    "name": "node-a",
-    "ip": "192.168.0.3",
-    "port": 8080
+    "id": "node-a",
+    "spec": {
+        "ip": "192.168.0.3",
+        "port": 8080
+    }
 }
 ```
 
@@ -52,7 +54,7 @@ Register or update a sbxlet node endpoint.
 ```json
 {
     "node": {
-        "name": "node-a",
+        "id": "node-a",
         "ip": "192.168.0.3",
         "port": 8080,
         "state": "Unknown",
@@ -145,7 +147,7 @@ Get a single node.
             "available_cpu_milli": 3500,
             "available_memory_bytes": 14904602214,
             "max_alloc_percent": 90,
-            "external_ip": "203.0.113.10"
+            "external": "203.0.113.10"
         }
     }
 }
@@ -329,7 +331,7 @@ List all control-plane sandbox objects.
             "status": {
                 "phase": "Running",
                 "node_name": "node-a",
-                "external_ip": "203.0.113.10",
+                "external": "203.0.113.10",
                 "assigned_ports": [
                     {
                         "host_port": 10000,
@@ -362,7 +364,7 @@ Get one control-plane sandbox object.
         "status": {
             "phase": "Running",
             "node_name": "node-a",
-            "external_ip": "203.0.113.10",
+            "external": "203.0.113.10",
             "assigned_ports": [
                 {
                     "host_port": 10000,
@@ -422,7 +424,7 @@ Query params:
         }
     ],
     "next_cursor": "sbx-demo-1",
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -438,7 +440,7 @@ Query params:
         "id": "sbx-demo-1",
         "phase": "running"
     },
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -482,8 +484,7 @@ Create sandbox directly on selected node (sbxlet API pass-through).
     "sandbox": {
         "id": "sbx-direct-1",
         "phase": "creating"
-    },
-    "external_ip": "203.0.113.10"
+    }
 }
 ```
 
@@ -496,8 +497,7 @@ Create sandbox directly on selected node (sbxlet API pass-through).
 ```json
 {
     "id": "sbx-direct-1",
-    "phase": "deleted",
-    "external_ip": "203.0.113.10"
+    "phase": "deleted"
 }
 ```
 
@@ -520,8 +520,7 @@ Query params:
         "lines": ["line1", "line2"],
         "next_cursor": "1234",
         "has_more": false
-    },
-    "external_ip": "203.0.113.10"
+    }
 }
 ```
 
@@ -535,8 +534,7 @@ Trigger sbxlet reconcile on selected node.
 
 ```json
 {
-    "ok": true,
-    "external_ip": "203.0.113.10"
+    "ok": true
 }
 ```
 
@@ -565,11 +563,18 @@ Resolved host port mapping used by scheduler and runtime provisioning:
 - `container_port`: target container port
 - `protocol`: `tcp` or `udp`
 
-### Node `resources.external_ip` and Sandbox `status.external_ip`
+### Node `resources.external` and Sandbox `status.external`
 
-- `resources.external_ip`: last known external/public IP synchronized from sbxlet node status.
-- `status.external_ip`: node external IP snapshot copied to each sandbox status during scheduling/status-sync.
-- Source of truth is orchestrator DB (node resource sync + sandbox status sync), so responses can still include the last synchronized value even when sbxlet is temporarily unreachable.
+- `resources.external`: value from `External` object bound to node (`POST /api/v1/externals`).
+- `status.external`: snapshot copied from node resources during scheduling/status sync.
+- If no external is configured, value is `(none)`.
+- API responses use `external` field.
+
+### Sandbox Private IP Sync
+
+- Sandbox private IP is synchronized from sbxlet sandbox status responses.
+- Orchestrator updates `sandbox.status.ip` during status sync.
+- Orchestrator also performs a short best-effort fetch right after create scheduling, so `ip` can appear earlier in `Running` state.
 
 ## Environment Variables
 

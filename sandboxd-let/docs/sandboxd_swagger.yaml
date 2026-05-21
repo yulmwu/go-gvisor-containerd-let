@@ -3,26 +3,17 @@ definitions:
   httpserver.ContainerLogsResponse:
     properties:
       container:
-        type: string
-      external_ip:
-        type: string
-      logs:
+        type: string      logs:
         $ref: '#/definitions/sandbox.LogsPage'
       sandbox_id:
         type: string
     type: object
   httpserver.CreateSandboxResponse:
-    properties:
-      external_ip:
-        type: string
-      sandbox:
+    properties:      sandbox:
         $ref: '#/definitions/model.Sandbox'
     type: object
   httpserver.DeleteSandboxResponse:
-    properties:
-      external_ip:
-        type: string
-      id:
+    properties:      id:
         type: string
       phase:
         type: string
@@ -33,10 +24,7 @@ definitions:
         type: string
     type: object
   httpserver.GetSandboxResponse:
-    properties:
-      external_ip:
-        type: string
-      sandbox:
+    properties:      sandbox:
         $ref: '#/definitions/model.Sandbox'
     type: object
   httpserver.HealthResponse:
@@ -45,10 +33,7 @@ definitions:
         type: boolean
     type: object
   httpserver.ListSandboxesResponse:
-    properties:
-      external_ip:
-        type: string
-      items:
+    properties:      items:
         items:
           $ref: '#/definitions/model.Sandbox'
         type: array
@@ -63,10 +48,7 @@ definitions:
         $ref: '#/definitions/model.NodeResourceSnapshot'
     type: object
   httpserver.ReconcileResponse:
-    properties:
-      external_ip:
-        type: string
-      ok:
+    properties:      ok:
         type: boolean
     type: object
   model.ContainerState:

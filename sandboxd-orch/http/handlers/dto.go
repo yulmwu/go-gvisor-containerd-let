@@ -13,12 +13,21 @@ type HealthResponse struct {
 type NodeResponse struct {
 	Node *types.Node `json:"node"`
 }
+type ExternalResponse struct {
+	External *types.External `json:"external"`
+}
+type ExternalsResponse struct {
+	Items []types.External `json:"items"`
+}
 
 type NodesResponse struct {
 	Items []types.Node `json:"items"`
 }
 
 type DeleteNodeResponse struct {
+	Deleted string `json:"deleted"`
+}
+type DeleteExternalResponse struct {
 	Deleted string `json:"deleted"`
 }
 

@@ -55,7 +55,7 @@ func TestAPI_AllEndpoints(t *testing.T) {
 	svc := newService(t)
 	defer svc.Close()
 	ip, port := splitURL(t, sbx.URL)
-	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: ip, Port: port}, "api"); err != nil {
+	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "n1", IP: ip, Port: port}, "api"); err != nil {
 		t.Fatalf("register node err=%v", err)
 	}
 
@@ -72,7 +72,7 @@ func TestAPI_AllEndpoints(t *testing.T) {
 	mustStatus(t, http.MethodDelete, orch.URL+"/api/v1/nodes/n1/sandboxes/sbx1", nil, 200)
 	mustStatus(t, http.MethodGet, orch.URL+"/api/v1/nodes/n1/sandboxes/sbx1/containers/c1/logs", nil, 200)
 	mustStatus(t, http.MethodPost, orch.URL+"/api/v1/nodes/n1/reconcile", nil, 200)
-	mustStatus(t, http.MethodPost, orch.URL+"/api/v1/nodes/register", []byte(`{"name":"","ip":"127.0.0.1","port":18080}`), 400)
+	mustStatus(t, http.MethodPost, orch.URL+"/api/v1/nodes", []byte(`{"id":"","ip":"127.0.0.1","port":18080}`), 400)
 
 	createPayload := []byte(`{"id":"sbx1","egress":true,"containers":[{"name":"c1","image":"nginx","resource":{"cpu":"100m","memory":"64Mi"}}],"ports":[]}`)
 	mustStatus(t, http.MethodPost, orch.URL+"/api/v1/nodes/n1/sandboxes", createPayload, 200)
@@ -88,7 +88,7 @@ func TestAPI_AllEndpoints(t *testing.T) {
 func TestAPI_DeleteNode_ForceSkipsNodeAPICalls(t *testing.T) {
 	svc := newService(t)
 	defer svc.Close()
-	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: "127.0.0.1", Port: 1}, "api"); err != nil {
+	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "n1", IP: "127.0.0.1", Port: 1}, "api"); err != nil {
 		t.Fatalf("register node err=%v", err)
 	}
 

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 		t.Fatalf("GetNode err=%v", err)
 	}
 
-	if n.Name != "n1" || n.State != types.NodeStateUnknown {
+	if n.ID != "n1" || n.State != types.NodeStateUnknown {
 		t.Fatalf("unexpected node: %+v", n)
 	}
 
@@ -36,7 +37,7 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 		t.Fatalf("UpdateHeartbeat err=%v", err)
 	}
 
-	res := types.NodeResources{CapacityCPUMilli: 1000, AllocatableCPUMilli: 900, ExternalIP: "203.0.113.10"}
+	res := types.NodeResources{CapacityCPUMilli: 1000, AllocatableCPUMilli: 900, External: "203.0.113.10"}
 	if err := r.UpdateNodeResources(ctx, "n1", res); err != nil {
 		t.Fatalf("UpdateNodeResources err=%v", err)
 	}
@@ -50,8 +51,8 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 		t.Fatalf("unexpected list: %+v", list)
 	}
 
-	if list[0].Resources.ExternalIP != "203.0.113.10" {
-		t.Fatalf("external ip=%q", list[0].Resources.ExternalIP)
+	if list[0].Resources.External != "203.0.113.10" {
+		t.Fatalf("external=%q", list[0].Resources.External)
 	}
 
 	if err := r.DeleteNode(ctx, "n1"); err != nil {
@@ -65,6 +66,123 @@ func TestSQLiteNodeRepo_CRUDAndUpdates(t *testing.T) {
 
 	if len(list) != 0 {
 		t.Fatalf("expected empty list, got %d", len(list))
+	}
+}
+
+func TestSQLiteNodeRepo_SetNodeExternal(t *testing.T) {
+	r, err := NewSQLite(filepath.Join(t.TempDir(), "orch.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	ctx := context.Background()
+	if err := r.UpsertNode(ctx, "n1", "127.0.0.1", 8081, "api"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.SetNodeExternal(ctx, "ext-1", "n1", "host1.swua.kr"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := r.GetNode(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n.Resources.External != "host1.swua.kr" {
+		t.Fatalf("external=%q", n.Resources.External)
+	}
+
+	if err := r.DeleteNodeExternal(ctx, "n1"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err = r.GetNode(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n.Resources.External != "(none)" {
+		t.Fatalf("external after delete=%q", n.Resources.External)
+	}
+}
+
+func TestSQLiteNodeRepo_ExternalCRUD(t *testing.T) {
+	r, err := NewSQLite(filepath.Join(t.TempDir(), "orch.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	ctx := context.Background()
+	if err := r.UpsertNode(ctx, "n1", "127.0.0.1", 8081, "api"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.SetNodeExternal(ctx, "ext-1", "n1", "host1.swua.kr"); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := r.ListExternals(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) != 1 || items[0].ID != "ext-1" {
+		t.Fatalf("items=%+v", items)
+	}
+
+	ex, err := r.GetExternal(ctx, "ext-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ex.NodeID != "n1" || ex.External != "host1.swua.kr" {
+		t.Fatalf("external=%+v", ex)
+	}
+
+	if err := r.DeleteExternal(ctx, "ext-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.GetExternal(ctx, "ext-1"); err == nil {
+		t.Fatal("expected not found")
+	}
+
+	if err := r.DeleteExternal(ctx, "ext-1"); err == nil {
+		t.Fatal("expected not found on second delete")
+	}
+}
+
+func TestSQLiteNodeRepo_SetNodeExternal_Conflict(t *testing.T) {
+	r, err := NewSQLite(filepath.Join(t.TempDir(), "orch.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	ctx := context.Background()
+	if err := r.UpsertNode(ctx, "n1", "127.0.0.1", 8081, "api"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.UpsertNode(ctx, "n2", "127.0.0.1", 8082, "api"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.SetNodeExternal(ctx, "ext-1", "n1", "host1.swua.kr"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = r.SetNodeExternal(ctx, "ext-2", "n1", "host2.swua.kr")
+	if !errors.Is(err, ErrExternalConflict) {
+		t.Fatalf("expected ErrExternalConflict for node binding conflict, got=%v", err)
+	}
+
+	err = r.SetNodeExternal(ctx, "ext-1", "n2", "host2.swua.kr")
+	if !errors.Is(err, ErrExternalConflict) {
+		t.Fatalf("expected ErrExternalConflict for external id conflict, got=%v", err)
 	}
 }
 

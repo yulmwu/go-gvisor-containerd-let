@@ -42,6 +42,11 @@ func newGetCommand(opts *Options) *cobra.Command {
 						return fmt.Errorf("--node is not applicable when getting node objects")
 					}
 					out, outErr = c.GetNode(ctx, ref.Name)
+				case "external":
+					if strings.TrimSpace(opts.Node) != "" {
+						return fmt.Errorf("--node is not applicable when getting external objects")
+					}
+					out, outErr = c.GetExternal(ctx, ref.Name)
 				default:
 					return fmt.Errorf("unsupported resource %q", ref.Resource)
 				}
@@ -75,6 +80,11 @@ func newGetCommand(opts *Options) *cobra.Command {
 						return fmt.Errorf("--node is not applicable when listing node objects")
 					}
 					out, err = c.ListNodes(ctx)
+				case "external":
+					if strings.TrimSpace(opts.Node) != "" {
+						return fmt.Errorf("--node is not applicable when listing external objects")
+					}
+					out, err = c.ListExternals(ctx)
 				}
 
 				if err != nil {
@@ -99,7 +109,7 @@ func newGetCommand(opts *Options) *cobra.Command {
 						} else {
 							printSandboxTable(cmd.OutOrStdout(), rows)
 						}
-					} else {
+					} else if res == "node" {
 						rows := extractNodeRows(out["items"])
 						if len(rows) == 0 {
 							fmt.Fprintln(cmd.OutOrStdout(), "No resources found")
@@ -111,6 +121,13 @@ func newGetCommand(opts *Options) *cobra.Command {
 						} else {
 							printNodeTable(cmd.OutOrStdout(), rows)
 						}
+					} else {
+						rows := extractExternalRows(out["items"])
+						if len(rows) == 0 {
+							fmt.Fprintln(cmd.OutOrStdout(), "No resources found")
+							continue
+						}
+						printExternalTable(cmd.OutOrStdout(), rows)
 					}
 
 					continue
@@ -121,6 +138,8 @@ func newGetCommand(opts *Options) *cobra.Command {
 					combined["sandboxes"] = out["items"]
 				case "node":
 					combined["nodes"] = out["items"]
+				case "external":
+					combined["externals"] = out["items"]
 				}
 			}
 
@@ -198,7 +217,7 @@ func newCreateCommand(opts *Options) *cobra.Command {
 				return err
 			}
 
-			payload, err := manifest.ParseSandboxManifest(raw)
+			payload, err := manifest.ParseManifest(raw)
 			if err != nil {
 				return err
 			}
@@ -207,11 +226,30 @@ func newCreateCommand(opts *Options) *cobra.Command {
 			ctx, cancel := withCtx(opts)
 			defer cancel()
 
+			kind := strings.ToLower(strings.TrimSpace(toString(payload["kind"])))
 			var out map[string]any
-			if strings.TrimSpace(opts.Node) != "" {
-				out, err = c.NodeCreateSandbox(ctx, opts.Node, payload)
-			} else {
-				out, err = c.CreateSandbox(ctx, payload)
+			switch kind {
+			case "sandbox":
+				req := map[string]any{"id": payload["id"], "spec": payload["spec"]}
+				if strings.TrimSpace(opts.Node) != "" {
+					out, err = c.NodeCreateSandbox(ctx, opts.Node, req)
+				} else {
+					out, err = c.CreateSandbox(ctx, req)
+				}
+			case "node":
+				if strings.TrimSpace(opts.Node) != "" {
+					return fmt.Errorf("--node is not applicable for node object create")
+				}
+				req := map[string]any{"id": payload["id"], "spec": payload["spec"]}
+				out, err = c.CreateNodeObject(ctx, req)
+			case "external":
+				if strings.TrimSpace(opts.Node) != "" {
+					return fmt.Errorf("--node is not applicable for external object create")
+				}
+				req := map[string]any{"id": payload["id"], "spec": payload["spec"]}
+				out, err = c.CreateExternalObject(ctx, req)
+			default:
+				return fmt.Errorf("unsupported manifest kind %q", payload["kind"])
 			}
 
 			if err != nil {
@@ -227,6 +265,7 @@ func newCreateCommand(opts *Options) *cobra.Command {
 }
 
 func newDeleteCommand(opts *Options) *cobra.Command {
+	var force bool
 	cmd := &cobra.Command{
 		Use:     "delete <resource/name>",
 		Aliases: []string{"d"},
@@ -238,19 +277,30 @@ func newDeleteCommand(opts *Options) *cobra.Command {
 				return err
 			}
 
-			if err := ensureSandboxResource(ref.Resource); err != nil {
-				return err
-			}
-
 			c := mustClient(opts)
 			ctx, cancel := withCtx(opts)
 			defer cancel()
 
 			var out map[string]any
-			if strings.TrimSpace(opts.Node) != "" {
-				out, err = c.NodeDeleteSandbox(ctx, opts.Node, ref.Name)
-			} else {
-				out, err = c.DeleteSandbox(ctx, ref.Name)
+			switch ref.Resource {
+			case "sandbox":
+				if strings.TrimSpace(opts.Node) != "" {
+					out, err = c.NodeDeleteSandbox(ctx, opts.Node, ref.Name)
+				} else {
+					out, err = c.DeleteSandbox(ctx, ref.Name)
+				}
+			case "node":
+				if strings.TrimSpace(opts.Node) != "" {
+					return fmt.Errorf("--node is not applicable when deleting node objects")
+				}
+				out, err = c.DeleteNodeWithForce(ctx, ref.Name, force)
+			case "external":
+				if strings.TrimSpace(opts.Node) != "" {
+					return fmt.Errorf("--node is not applicable when deleting external objects")
+				}
+				out, err = c.DeleteExternal(ctx, ref.Name)
+			default:
+				return fmt.Errorf("unsupported resource %q", ref.Resource)
 			}
 
 			if err != nil {
@@ -260,6 +310,7 @@ func newDeleteCommand(opts *Options) *cobra.Command {
 			return printAny(cmd.OutOrStdout(), out, opts.Output)
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "force delete for node resource")
 
 	return cmd
 }

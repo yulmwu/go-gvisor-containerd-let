@@ -8,13 +8,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
-	"strconv"
-	"testing"
-	"time"
-
 	"sandboxd-o/sandboxd-orch/config"
 	"sandboxd-o/sandboxd-orch/service"
 	"sandboxd-o/sandboxd-orch/types"
+	"strconv"
+	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -62,7 +61,7 @@ func setupHandler(t *testing.T) (*Handler, *service.Service, *httptest.Server) {
 		t.Fatal(err)
 	}
 
-	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: u.Hostname(), Port: port}, "api"); err != nil {
+	if _, err := svc.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "n1", IP: u.Hostname(), Port: port}, "api"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,16 +77,20 @@ func TestHandlers_AllEndpoints(t *testing.T) {
 	r := gin.New()
 	r.GET("/healthz", h.Healthz)
 	r.GET("/nodes", h.ListNodes)
-	r.GET("/nodes/:name", h.GetNode)
-	r.POST("/nodes/register", h.RegisterNode)
-	r.DELETE("/nodes/:name", h.DeleteNode)
-	r.POST("/nodes/:name/heartbeat", h.HeartbeatNode)
-	r.GET("/nodes/:name/sandboxes", h.NodeListSandboxes)
-	r.GET("/nodes/:name/sandboxes/:id", h.NodeGetSandbox)
-	r.POST("/nodes/:name/sandboxes", h.NodeCreateSandbox)
-	r.DELETE("/nodes/:name/sandboxes/:id", h.NodeDeleteSandbox)
-	r.GET("/nodes/:name/sandboxes/:id/containers/:container/logs", h.NodeContainerLogs)
-	r.POST("/nodes/:name/reconcile", h.NodeReconcile)
+	r.GET("/nodes/:id", h.GetNode)
+	r.POST("/nodes", h.CreateNodeObject)
+	r.POST("/externals", h.UpsertExternalObject)
+	r.GET("/externals", h.ListExternals)
+	r.GET("/externals/:id", h.GetExternal)
+	r.DELETE("/externals/:id", h.DeleteExternal)
+	r.DELETE("/nodes/:id", h.DeleteNode)
+	r.POST("/nodes/:id/heartbeat", h.HeartbeatNode)
+	r.GET("/nodes/:id/sandboxes", h.NodeListSandboxes)
+	r.GET("/nodes/:id/sandboxes/:sandboxId", h.NodeGetSandbox)
+	r.POST("/nodes/:id/sandboxes", h.NodeCreateSandbox)
+	r.DELETE("/nodes/:id/sandboxes/:sandboxId", h.NodeDeleteSandbox)
+	r.GET("/nodes/:id/sandboxes/:sandboxId/containers/:container/logs", h.NodeContainerLogs)
+	r.POST("/nodes/:id/reconcile", h.NodeReconcile)
 	r.POST("/sandboxes", h.CreateSandbox)
 	r.GET("/sandboxes", h.ListSandboxes)
 	r.GET("/sandboxes/:id", h.GetSandbox)
@@ -118,8 +121,17 @@ func TestHandlers_AllEndpoints(t *testing.T) {
 	must(http.MethodGet, "/nodes", nil, 200)
 	must(http.MethodGet, "/nodes/n1", nil, 200)
 	must(http.MethodGet, "/nodes/no", nil, 404)
-	must(http.MethodPost, "/nodes/register", []byte(`{"name":"n2","ip":"127.0.0.1","port":18080}`), 200)
-	must(http.MethodPost, "/nodes/register", []byte(`{"name":"","ip":"127.0.0.1","port":18080}`), 400)
+	must(http.MethodPost, "/nodes", []byte(`{"id":"n2","spec":{"ip":"127.0.0.1","port":18080}}`), 200)
+	must(http.MethodPost, "/nodes", []byte(`{"id":"","spec":{"ip":"127.0.0.1","port":18080}}`), 400)
+	must(http.MethodPost, "/externals", []byte(`{"id":"ext-1","spec":{"node_id":"n1","external":"host1.swua.kr"}}`), 200)
+	must(http.MethodPost, "/externals", []byte(`{"id":"ext-2","spec":{"node_id":"missing","external":"host1.swua.kr"}}`), 400)
+	must(http.MethodGet, "/externals", nil, 200)
+	must(http.MethodGet, "/externals/ext-1", nil, 200)
+	must(http.MethodGet, "/externals/no", nil, 404)
+	must(http.MethodGet, "/externals/%20", nil, 400)
+	must(http.MethodDelete, "/externals/ext-1", nil, 200)
+	must(http.MethodDelete, "/externals/no", nil, 404)
+	must(http.MethodDelete, "/externals/%20", nil, 400)
 	must(http.MethodDelete, "/nodes/n2?force=true", nil, 200)
 	must(http.MethodDelete, "/nodes/%20", nil, 400)
 	must(http.MethodDelete, "/nodes/n1?force=not-bool", nil, 400)

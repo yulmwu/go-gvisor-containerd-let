@@ -9,9 +9,9 @@ import (
 
 var ErrInvalidInput = errors.New("invalid input")
 
-func validateNodeInput(name, ip string, port int) error {
-	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("%w: name is required", ErrInvalidInput)
+func validateNodeInput(id, ip string, port int) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("%w: id is required", ErrInvalidInput)
 	}
 
 	if net.ParseIP(strings.TrimSpace(ip)) == nil {

@@ -1,0 +1,6 @@
+apiVersion: sandboxd.o/v1
+kind: External
+id: sandboxd-node-external-1
+spec:
+  node_id: "sandboxd-node-1"
+  external: "host1.swua.kr"

@@ -313,9 +313,6 @@ const docTemplatesandboxd = `{
                 "container": {
                     "type": "string"
                 },
-                "external_ip": {
-                    "type": "string"
-                },
                 "logs": {
                     "$ref": "#/definitions/sandbox.LogsPage"
                 },
@@ -327,9 +324,6 @@ const docTemplatesandboxd = `{
         "httpserver.CreateSandboxResponse": {
             "type": "object",
             "properties": {
-                "external_ip": {
-                    "type": "string"
-                },
                 "sandbox": {
                     "$ref": "#/definitions/model.Sandbox"
                 }
@@ -338,9 +332,6 @@ const docTemplatesandboxd = `{
         "httpserver.DeleteSandboxResponse": {
             "type": "object",
             "properties": {
-                "external_ip": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
@@ -360,9 +351,6 @@ const docTemplatesandboxd = `{
         "httpserver.GetSandboxResponse": {
             "type": "object",
             "properties": {
-                "external_ip": {
-                    "type": "string"
-                },
                 "sandbox": {
                     "$ref": "#/definitions/model.Sandbox"
                 }
@@ -379,9 +367,6 @@ const docTemplatesandboxd = `{
         "httpserver.ListSandboxesResponse": {
             "type": "object",
             "properties": {
-                "external_ip": {
-                    "type": "string"
-                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -407,9 +392,6 @@ const docTemplatesandboxd = `{
         "httpserver.ReconcileResponse": {
             "type": "object",
             "properties": {
-                "external_ip": {
-                    "type": "string"
-                },
                 "ok": {
                     "type": "boolean"
                 }

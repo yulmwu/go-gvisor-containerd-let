@@ -14,7 +14,7 @@ type SandboxManifest struct {
 	Spec       map[string]any `yaml:"spec"`
 }
 
-func ParseSandboxManifest(raw []byte) (map[string]any, error) {
+func ParseManifest(raw []byte) (map[string]any, error) {
 	var m SandboxManifest
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("parse yaml: %w", err)
@@ -24,26 +24,44 @@ func ParseSandboxManifest(raw []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("kind is required")
 	}
 
-	if !strings.EqualFold(strings.TrimSpace(m.Kind), "Sandbox") {
-		return nil, fmt.Errorf("unsupported kind %q (expected Sandbox)", m.Kind)
-	}
-
-	if strings.TrimSpace(m.ID) == "" {
+	kind := strings.ToLower(strings.TrimSpace(m.Kind))
+	id := strings.TrimSpace(m.ID)
+	if id == "" {
 		return nil, fmt.Errorf("id is required")
 	}
 
-	if m.Spec == nil {
-		return nil, fmt.Errorf("spec is required")
+	switch kind {
+	case "sandbox":
+		if m.Spec == nil {
+			return nil, fmt.Errorf("spec is required")
+		}
+		if _, ok := m.Spec["containers"]; !ok {
+			return nil, fmt.Errorf("spec.containers is required")
+		}
+		return map[string]any{"kind": "Sandbox", "id": id, "spec": m.Spec}, nil
+	case "node":
+		if m.Spec == nil {
+			return nil, fmt.Errorf("spec is required")
+		}
+		if _, ok := m.Spec["ip"]; !ok {
+			return nil, fmt.Errorf("spec.ip is required")
+		}
+		if _, ok := m.Spec["port"]; !ok {
+			return nil, fmt.Errorf("spec.port is required")
+		}
+		return map[string]any{"kind": "Node", "id": id, "spec": m.Spec}, nil
+	case "external":
+		if m.Spec == nil {
+			return nil, fmt.Errorf("spec is required")
+		}
+		if _, ok := m.Spec["node_id"]; !ok {
+			return nil, fmt.Errorf("spec.node_id is required")
+		}
+		if _, ok := m.Spec["external"]; !ok {
+			return nil, fmt.Errorf("spec.external is required")
+		}
+		return map[string]any{"kind": "External", "id": id, "spec": m.Spec}, nil
+	default:
+		return nil, fmt.Errorf("unsupported kind %q (expected Sandbox|Node|External)", m.Kind)
 	}
-
-	if _, ok := m.Spec["containers"]; !ok {
-		return nil, fmt.Errorf("spec.containers is required")
-	}
-
-	payload := map[string]any{
-		"id":   strings.TrimSpace(m.ID),
-		"spec": m.Spec,
-	}
-
-	return payload, nil
 }

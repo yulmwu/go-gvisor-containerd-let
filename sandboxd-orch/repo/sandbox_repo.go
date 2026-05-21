@@ -18,6 +18,7 @@ type SandboxRepo interface {
 	GetSandbox(ctx context.Context, id string) (*types.Sandbox, error)
 	ListSandboxes(ctx context.Context) ([]types.Sandbox, error)
 	UpdateSandboxStatus(ctx context.Context, id string, st types.SandboxStatus) error
+	UpdateSandboxStatusIfUnchanged(ctx context.Context, id string, st types.SandboxStatus, expectedUpdatedAt time.Time) (bool, error)
 	DeleteSandbox(ctx context.Context, id string) error
 	ReserveSandboxPortsAndSchedule(ctx context.Context, sandboxID, nodeName string, ports []types.SandboxPortAssign) error
 	ReleaseSandboxPorts(ctx context.Context, sandboxID string) error
@@ -83,6 +84,32 @@ func (r *SQLiteNodeRepo) UpdateSandboxStatus(ctx context.Context, id string, st 
 
 	_, err = r.db.ExecContext(ctx, `UPDATE sandboxes SET status_json=?, updated_at=? WHERE id=?`, string(raw), time.Now().UTC().Format(time.RFC3339Nano), id)
 	return err
+}
+
+func (r *SQLiteNodeRepo) UpdateSandboxStatusIfUnchanged(ctx context.Context, id string, st types.SandboxStatus, expectedUpdatedAt time.Time) (bool, error) {
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return false, err
+	}
+
+	res, err := r.db.ExecContext(
+		ctx,
+		`UPDATE sandboxes SET status_json=?, updated_at=? WHERE id=? AND updated_at=?`,
+		string(raw),
+		time.Now().UTC().Format(time.RFC3339Nano),
+		id,
+		expectedUpdatedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return false, err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return affected == 1, nil
 }
 
 func (r *SQLiteNodeRepo) DeleteSandbox(ctx context.Context, id string) error {

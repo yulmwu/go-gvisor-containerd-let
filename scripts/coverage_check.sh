@@ -13,7 +13,7 @@ go test -covermode=atomic -coverprofile="$RAW" ./...
 {
   head -n1 "$RAW"
   tail -n +2 "$RAW" | grep -Ev \
-    '(^sandboxd-o/cmd/|^sandboxd-o/scripts/|^sandboxd-o/sandboxd/network/|^sandboxd-o/sandboxd/sandbox/|^sandboxd-o/sandboxd/http/(handlers|router|server)\.go|^sandboxd-o/.*/router\.go|^sandboxd-o/.*/types\.go|^sandboxd-o/docs/|^sandboxd-o/assets/)'
+    '(^sandboxd-o/cmd/|^sandboxd-o/scripts/|^sandboxd-o/docs/|^sandboxd-o/assets/|^sandboxd-o/.*/router\.go|^sandboxd-o/.*/server\.go|^sandboxd-o/.*/response\.go|^sandboxd-o/.*/types\.go|^sandboxd-o/.*/dto\.go|^sandboxd-o/sandboxd-let/network/|^sandboxd-o/sandboxd-let/sandbox/|^sandboxd-o/sandboxd-let/http/handlers\.go|^sandboxd-o/sandboxd-orch/docs/|^sandboxd-o/sandboxd-let/docs/|^sandboxd-o/sandboxd-ctl/)'
 } > "$OUT"
 
 go tool cover -func="$OUT"
