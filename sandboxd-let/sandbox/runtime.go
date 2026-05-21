@@ -92,8 +92,20 @@ func ensureSandboxParentCgroup(baseParent, sandboxID string, lim *runtimeapi.Lin
 		parent = "/" + parent
 	}
 
-	parent = strings.TrimSuffix(parent, "/")
-	parentFsPath := filepath.Join("/sys/fs/cgroup", strings.TrimPrefix(parent, "/"))
+	parent = filepath.Clean(parent)
+	if parent == "/" {
+		return "", fmt.Errorf("invalid cgroup parent %q: root is not allowed", baseParent)
+	}
+
+	parentFsPath := filepath.Clean(filepath.Join("/sys/fs/cgroup", strings.TrimPrefix(parent, "/")))
+	if !strings.HasPrefix(parentFsPath, "/sys/fs/cgroup/") {
+		return "", fmt.Errorf("invalid cgroup parent %q: escapes /sys/fs/cgroup", baseParent)
+	}
+
+	if err := os.MkdirAll(parentFsPath, 0o755); err != nil {
+		return "", fmt.Errorf("create cgroup parent %s: %w", parentFsPath, err)
+	}
+
 	if err := ensureCgroupSubtreeControllers(parentFsPath, []string{"memory", "cpu", "pids"}); err != nil {
 		return "", err
 	}
