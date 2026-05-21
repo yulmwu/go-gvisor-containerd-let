@@ -56,10 +56,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := svc.BootstrapNodes(ctx); err != nil {
-		logger.Error("bootstrap nodes error", slog.Any("error", err))
-		os.Exit(1)
-	}
 	svc.StartHeartbeatLoop(ctx)
 	svc.StartResourceSyncLoop(ctx)
 	svc.StartSchedulerLoop(ctx)
