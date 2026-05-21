@@ -10,7 +10,7 @@ import (
 func TestLoad_DefaultAndYaml(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "apiserver.yaml")
-	raw := "listenAddress: ':18082'\nnodes:\n  - name: n1\n    ip: 127.0.0.1\n    port: 18080\n"
+	raw := "listenAddress: ':18082'\n"
 	if err := os.WriteFile(cfgFile, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -26,9 +26,6 @@ func TestLoad_DefaultAndYaml(t *testing.T) {
 		t.Fatalf("HTTPAddr=%q", cfg.HTTPAddr)
 	}
 
-	if len(cfg.Bootstrap.Nodes) != 1 || cfg.Bootstrap.Nodes[0].Name != "n1" {
-		t.Fatalf("unexpected bootstrap nodes: %+v", cfg.Bootstrap.Nodes)
-	}
 }
 
 func TestLoadBootstrap_MissingAndInvalid(t *testing.T) {
@@ -37,7 +34,7 @@ func TestLoadBootstrap_MissingAndInvalid(t *testing.T) {
 		t.Fatalf("missing file should not error: %v", err)
 	}
 
-	if b.ListenAddress != "" || len(b.Nodes) != 0 {
+	if b.ListenAddress != "" {
 		t.Fatalf("unexpected bootstrap: %+v", b)
 	}
 
@@ -168,5 +165,74 @@ func TestLoad_StatusSyncFallbackOnInvalidValues(t *testing.T) {
 	}
 	if cfg.StatusSyncMaxParallel != 4 {
 		t.Fatalf("StatusSyncMaxParallel fallback=%d", cfg.StatusSyncMaxParallel)
+	}
+}
+
+func TestLoad_NormalizesInvalidTuningValues(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "apiserver.yaml")
+	if err := os.WriteFile(cfgFile, []byte("listenAddress: ':18082'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ORCH_CONFIG_PATH", cfgFile)
+	t.Setenv("ORCH_SQLITE_PATH", filepath.Join(dir, "orch.db"))
+	t.Setenv("ORCH_READY_SUCCESS_THRESHOLD", "0")
+	t.Setenv("ORCH_NOTREADY_FAILURE_THRESHOLD", "0")
+	t.Setenv("ORCH_HEARTBEAT_MAX_PARALLEL", "0")
+	t.Setenv("ORCH_RESOURCE_SYNC_INTERVAL", "0s")
+	t.Setenv("ORCH_RESOURCE_PERSIST_MIN_INTERVAL", "0s")
+	t.Setenv("ORCH_RESOURCE_PERSIST_MAX_INTERVAL", "0s")
+	t.Setenv("ORCH_SCHEDULER_INTERVAL", "0s")
+	t.Setenv("ORCH_RECONCILE_INTERVAL", "0s")
+	t.Setenv("ORCH_HOSTPORT_MIN", "0")
+	t.Setenv("ORCH_HOSTPORT_MAX", "1")
+	t.Setenv("ORCH_CREATE_RPS", "0")
+	t.Setenv("ORCH_CREATE_BURST", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ReadySuccessThreshold != 1 || cfg.NotReadyFailureThreshold != 1 {
+		t.Fatalf("threshold normalization failed: %+v", cfg)
+	}
+
+	if cfg.HeartbeatMaxParallel != 1 {
+		t.Fatalf("HeartbeatMaxParallel=%d", cfg.HeartbeatMaxParallel)
+	}
+
+	if cfg.ResourceSyncInterval != 30*time.Second || cfg.ResourcePersistMinInt != 30*time.Second || cfg.ResourcePersistMaxInt != 5*time.Minute {
+		t.Fatalf("resource interval normalization failed")
+	}
+
+	if cfg.SchedulerInterval != 3*time.Second || cfg.ReconcileInterval != 5*time.Second {
+		t.Fatalf("loop interval normalization failed")
+	}
+
+	if cfg.HostPortMin != 10000 || cfg.HostPortMax != 32767 {
+		t.Fatalf("host port normalization failed: min=%d max=%d", cfg.HostPortMin, cfg.HostPortMax)
+	}
+
+	if cfg.CreateRPS != 20.0 || cfg.CreateBurst != 40 {
+		t.Fatalf("create limiter normalization failed: rps=%f burst=%d", cfg.CreateRPS, cfg.CreateBurst)
+	}
+}
+
+func TestLoad_UsesEnvHTTPAddrOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "apiserver.yaml")
+	if err := os.WriteFile(cfgFile, []byte("listenAddress: ':18082'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ORCH_CONFIG_PATH", cfgFile)
+	t.Setenv("ORCH_HTTP_ADDR", ":19090")
+	t.Setenv("ORCH_SQLITE_PATH", filepath.Join(dir, "orch.db"))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTPAddr != ":19090" {
+		t.Fatalf("HTTPAddr=%q", cfg.HTTPAddr)
 	}
 }

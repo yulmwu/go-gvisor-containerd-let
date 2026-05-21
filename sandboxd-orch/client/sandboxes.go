@@ -18,15 +18,15 @@ type ContainerSyncStatus struct {
 
 type SandboxSyncStatus struct {
 	ID                  string                `json:"id"`
+	IP                  string                `json:"ip,omitempty"`
 	Phase               string                `json:"phase"`
 	Error               string                `json:"error,omitempty"`
 	UnhealthyContainers []ContainerSyncStatus `json:"unhealthy_containers,omitempty"`
 }
 
 type SandboxStatusesResponse struct {
-	Items      []SandboxSyncStatus `json:"items"`
-	Missing    []string            `json:"missing,omitempty"`
-	ExternalIP string              `json:"external_ip,omitempty"`
+	Items   []SandboxSyncStatus `json:"items"`
+	Missing []string            `json:"missing,omitempty"`
 }
 
 func (c *Client) Reconcile(ctx context.Context) (map[string]any, error) {

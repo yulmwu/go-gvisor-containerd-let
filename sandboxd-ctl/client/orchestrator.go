@@ -25,14 +25,24 @@ func (c *Client) GetNode(ctx context.Context, name string) (map[string]any, erro
 	return c.do(ctx, http.MethodGet, "/api/v1/nodes/"+url.PathEscape(strings.TrimSpace(name)), nil)
 }
 
-type RegisterNodeRequest struct {
-	Name string `json:"name"`
+type CreateNodeObjectRequest struct {
+	ID   string `json:"id"`
 	IP   string `json:"ip"`
 	Port int    `json:"port"`
 }
 
-func (c *Client) RegisterNode(ctx context.Context, req RegisterNodeRequest) (map[string]any, error) {
-	return c.do(ctx, http.MethodPost, "/api/v1/nodes/register", req)
+func (c *Client) CreateNodeObject(ctx context.Context, req map[string]any) (map[string]any, error) {
+	return c.do(ctx, http.MethodPost, "/api/v1/nodes", req)
+}
+
+func (c *Client) CreateExternalObject(ctx context.Context, req map[string]any) (map[string]any, error) {
+	return c.do(ctx, http.MethodPost, "/api/v1/externals", req)
+}
+func (c *Client) ListExternals(ctx context.Context) (map[string]any, error) {
+	return c.do(ctx, http.MethodGet, "/api/v1/externals", nil)
+}
+func (c *Client) GetExternal(ctx context.Context, id string) (map[string]any, error) {
+	return c.do(ctx, http.MethodGet, "/api/v1/externals/"+url.PathEscape(strings.TrimSpace(id)), nil)
 }
 
 func (c *Client) DeleteNode(ctx context.Context, name string) (map[string]any, error) {
@@ -46,6 +56,10 @@ func (c *Client) DeleteNodeWithForce(ctx context.Context, name string, force boo
 	}
 
 	return c.do(ctx, http.MethodDelete, path, nil)
+}
+
+func (c *Client) DeleteExternal(ctx context.Context, id string) (map[string]any, error) {
+	return c.do(ctx, http.MethodDelete, "/api/v1/externals/"+url.PathEscape(strings.TrimSpace(id)), nil)
 }
 
 func (c *Client) GetSandbox(ctx context.Context, id string) (map[string]any, error) {

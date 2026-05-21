@@ -40,7 +40,7 @@ func setupRouter(t *testing.T, sandboxdURL string) *httptest.Server {
 	}
 
 	ip, port := splitLocalURL(t, sandboxdURL)
-	_, _ = svc.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "node1", IP: ip, Port: port}, "api")
+	_, _ = svc.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "node1", IP: ip, Port: port}, "api")
 
 	lg, _ := logging.New(logging.Config{}, logging.Options{Service: "test"})
 	r := ohttp.NewRouter(svc, cfg, lg)
@@ -85,7 +85,7 @@ func TestRegisterNode_BadRequest(t *testing.T) {
 	r := setupRouter(t, sbx.URL)
 	defer r.Close()
 
-	resp, err := http.Post(r.URL+"/api/v1/nodes/register", "application/json", bytes.NewBufferString("{}"))
+	resp, err := http.Post(r.URL+"/api/v1/nodes", "application/json", bytes.NewBufferString("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,10 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 type NodeState string
 type SandboxPhase string
@@ -20,7 +24,7 @@ const (
 )
 
 type Node struct {
-	Name          string        `json:"name"`
+	ID            string        `json:"id"`
 	IP            string        `json:"ip"`
 	Port          int           `json:"port"`
 	State         NodeState     `json:"state"`
@@ -45,25 +49,52 @@ type NodeResources struct {
 	AvailableCPUMilli   int64      `json:"available_cpu_milli"`
 	AvailableMemory     int64      `json:"available_memory_bytes"`
 	MaxAllocPercent     int        `json:"max_alloc_percent"`
-	ExternalIP          string     `json:"external_ip,omitempty"`
+	External            string     `json:"-"`
 	UpdatedAt           *time.Time `json:"updated_at,omitempty"`
 }
 
 type RegisterNodeRequest struct {
-	Name string `json:"name"`
+	ID   string `json:"id"`
 	IP   string `json:"ip"`
 	Port int    `json:"port"`
 }
 
 type APIServerConfig struct {
-	ListenAddress string       `yaml:"listenAddress"`
-	Nodes         []StaticNode `yaml:"nodes"`
+	ListenAddress string `yaml:"listenAddress"`
 }
 
 type StaticNode struct {
-	Name string `yaml:"name"`
+	ID   string `yaml:"id"`
 	IP   string `yaml:"ip"`
 	Port int    `yaml:"port"`
+}
+
+type CreateNodeObjectRequest struct {
+	ID   string         `json:"id" yaml:"id"`
+	Spec NodeObjectSpec `json:"spec" yaml:"spec"`
+}
+
+type NodeObjectSpec struct {
+	IP   string `json:"ip" yaml:"ip"`
+	Port int    `json:"port" yaml:"port"`
+}
+
+type CreateExternalObjectRequest struct {
+	ID   string             `json:"id" yaml:"id"`
+	Spec ExternalObjectSpec `json:"spec" yaml:"spec"`
+}
+
+type ExternalObjectSpec struct {
+	NodeID   string `json:"nodeId" yaml:"nodeId"`
+	External string `json:"external" yaml:"external"`
+}
+
+type External struct {
+	ID        string    `json:"id"`
+	NodeID    string    `json:"node_id"`
+	External  string    `json:"external"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Sandbox struct {
@@ -105,7 +136,8 @@ type SandboxPortSpec struct {
 type SandboxStatus struct {
 	Phase         SandboxPhase        `json:"phase"`
 	NodeName      string              `json:"node_name,omitempty"`
-	ExternalIP    string              `json:"external_ip,omitempty"`
+	External      string              `json:"-"`
+	IP            string              `json:"ip,omitempty"`
 	AssignedPorts []SandboxPortAssign `json:"assigned_ports,omitempty"`
 	SandboxdID    string              `json:"sandboxd_id,omitempty"`
 	ExpireAt      *time.Time          `json:"expire_at,omitempty"`
@@ -121,4 +153,56 @@ type SandboxPortAssign struct {
 type CreateSandboxObjectRequest struct {
 	ID   string      `json:"id" yaml:"id"`
 	Spec SandboxSpec `json:"spec" yaml:"spec"`
+}
+
+func (r NodeResources) MarshalJSON() ([]byte, error) {
+	type alias NodeResources
+	ext := strings.TrimSpace(r.External)
+	return json.Marshal(struct {
+		alias
+		External string `json:"external,omitempty"`
+	}{
+		alias:    alias(r),
+		External: ext,
+	})
+}
+
+func (r *NodeResources) UnmarshalJSON(b []byte) error {
+	type alias NodeResources
+	aux := struct {
+		alias
+		External string `json:"external,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*r = NodeResources(aux.alias)
+	r.External = strings.TrimSpace(aux.External)
+	return nil
+}
+
+func (s SandboxStatus) MarshalJSON() ([]byte, error) {
+	type alias SandboxStatus
+	ext := strings.TrimSpace(s.External)
+	return json.Marshal(struct {
+		alias
+		External string `json:"external,omitempty"`
+	}{
+		alias:    alias(s),
+		External: ext,
+	})
+}
+
+func (s *SandboxStatus) UnmarshalJSON(b []byte) error {
+	type alias SandboxStatus
+	aux := struct {
+		alias
+		External string `json:"external,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*s = SandboxStatus(aux.alias)
+	s.External = strings.TrimSpace(aux.External)
+	return nil
 }

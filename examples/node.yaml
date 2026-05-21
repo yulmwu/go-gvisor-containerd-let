@@ -1,0 +1,6 @@
+apiVersion: sandboxd.o/v1
+kind: Node
+id: sandboxd-node-1
+spec:
+  ip: "127.0.0.1"
+  port: 8081

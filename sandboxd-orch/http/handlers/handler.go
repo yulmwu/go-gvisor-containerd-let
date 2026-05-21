@@ -49,25 +49,25 @@ func (h *Handler) Healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, HealthResponse{OK: true})
 }
 
-// RegisterNode godoc
-// @Summary Register node
-// @Description Registers or updates a sandboxd node endpoint.
+// CreateNodeObject godoc
+// @Summary Create/Update node object
+// @Description Creates or updates a node object from id/spec(ip,port).
 // @Tags orchestrator-node
 // @Accept json
 // @Produce json
-// @Param request body types.RegisterNodeRequest true "Node registration request"
+// @Param request body types.CreateNodeObjectRequest true "Node object request"
 // @Success 200 {object} NodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/nodes/register [post]
-func (h *Handler) RegisterNode(c *gin.Context) {
-	var req types.RegisterNodeRequest
+// @Router /api/v1/nodes [post]
+func (h *Handler) CreateNodeObject(c *gin.Context) {
+	var req types.CreateNodeObjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	n, err := h.svc.RegisterNode(c.Request.Context(), req, "api")
+	n, err := h.svc.CreateNodeObject(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -79,6 +79,79 @@ func (h *Handler) RegisterNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, NodeResponse{Node: n})
+}
+
+// UpsertExternalObject godoc
+// @Summary Create/Update external object
+// @Description Sets a single external endpoint for one node (1:1 per node).
+// @Tags orchestrator-node
+// @Accept json
+// @Produce json
+// @Param request body types.CreateExternalObjectRequest true "External object request"
+// @Success 200 {object} HealthResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/externals [post]
+func (h *Handler) UpsertExternalObject(c *gin.Context) {
+	var req types.CreateExternalObjectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	if err := h.svc.UpsertExternalObject(c.Request.Context(), req); err != nil {
+		if errors.Is(err, service.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, HealthResponse{OK: true})
+}
+
+func (h *Handler) ListExternals(c *gin.Context) {
+	items, err := h.svc.ListExternals(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, ExternalsResponse{Items: items})
+}
+
+func (h *Handler) GetExternal(c *gin.Context) {
+	it, err := h.svc.GetExternal(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "external not found"})
+			return
+		}
+		if errors.Is(err, service.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, ExternalResponse{External: it})
+}
+
+func (h *Handler) DeleteExternal(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.svc.DeleteExternal(c.Request.Context(), id); err != nil {
+		if errors.Is(err, service.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: "external not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, DeleteExternalResponse{Deleted: id})
 }
 
 // ListNodes godoc
@@ -104,13 +177,13 @@ func (h *Handler) ListNodes(c *gin.Context) {
 // @Description Returns a single node by name.
 // @Tags orchestrator-node
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Success 200 {object} NodeResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/nodes/{name} [get]
+// @Router /api/v1/nodes/{id} [get]
 func (h *Handler) GetNode(c *gin.Context) {
-	n, err := h.svc.GetNode(c.Request.Context(), c.Param("name"))
+	n, err := h.svc.GetNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "node not found"})
@@ -129,12 +202,12 @@ func (h *Handler) GetNode(c *gin.Context) {
 // @Description Deletes node registration and detaches related sandbox scheduling metadata.
 // @Tags orchestrator-node
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Param force query bool false "Force delete without node API calls (use only when node is already gone)"
 // @Success 200 {object} DeleteNodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/nodes/{name} [delete]
+// @Router /api/v1/nodes/{id} [delete]
 func (h *Handler) DeleteNode(c *gin.Context) {
 	force := false
 	if raw := strings.TrimSpace(c.Query("force")); raw != "" {
@@ -147,7 +220,7 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 		force = v
 	}
 
-	if err := h.svc.DeleteNodeForce(c.Request.Context(), c.Param("name"), force); err != nil {
+	if err := h.svc.DeleteNodeForce(c.Request.Context(), c.Param("id"), force); err != nil {
 		if errors.Is(err, service.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
@@ -157,7 +230,7 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, DeleteNodeResponse{Deleted: c.Param("name")})
+	c.JSON(http.StatusOK, DeleteNodeResponse{Deleted: c.Param("id")})
 }
 
 // HeartbeatNode godoc
@@ -165,13 +238,13 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 // @Description Probes sandboxd health and node resources immediately.
 // @Tags orchestrator-node
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Success 200 {object} HeartbeatResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/heartbeat [post]
+// @Router /api/v1/nodes/{id}/heartbeat [post]
 func (h *Handler) HeartbeatNode(c *gin.Context) {
-	client, node, err := h.svc.SandboxClientForNode(c.Request.Context(), c.Param("name"))
+	client, node, err := h.svc.SandboxClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "node not found"})
@@ -208,15 +281,15 @@ func (h *Handler) HeartbeatNode(c *gin.Context) {
 // @Description Proxies sandbox list request to selected node sandboxd.
 // @Tags orchestrator-proxy
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Param cursor query string false "Pagination cursor"
 // @Param limit query int false "Page size"
 // @Success 200 {object} ProxyResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/sandboxes [get]
+// @Router /api/v1/nodes/{id}/sandboxes [get]
 func (h *Handler) NodeListSandboxes(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return
@@ -232,20 +305,20 @@ func (h *Handler) NodeListSandboxes(c *gin.Context) {
 // @Description Proxies sandbox detail request to selected node sandboxd.
 // @Tags orchestrator-proxy
 // @Produce json
-// @Param name path string true "Node name"
-// @Param id path string true "Sandbox ID"
+// @Param id path string true "Node id"
+// @Param sandboxId path string true "Sandbox ID"
 // @Success 200 {object} ProxyResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/sandboxes/{id} [get]
+// @Router /api/v1/nodes/{id}/sandboxes/{sandboxId} [get]
 func (h *Handler) NodeGetSandbox(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return
 	}
 
-	out, err := client.GetSandbox(c.Request.Context(), c.Param("id"))
+	out, err := client.GetSandbox(c.Request.Context(), c.Param("sandboxId"))
 	respondProxy(c, out, err)
 }
 
@@ -255,15 +328,15 @@ func (h *Handler) NodeGetSandbox(c *gin.Context) {
 // @Tags orchestrator-proxy
 // @Accept json
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Param request body model.CreateSandboxRequest true "Sandbox create request"
 // @Success 200 {object} ProxyResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/sandboxes [post]
+// @Router /api/v1/nodes/{id}/sandboxes [post]
 func (h *Handler) NodeCreateSandbox(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return
@@ -284,20 +357,20 @@ func (h *Handler) NodeCreateSandbox(c *gin.Context) {
 // @Description Proxies delete-sandbox request to selected node sandboxd.
 // @Tags orchestrator-proxy
 // @Produce json
-// @Param name path string true "Node name"
-// @Param id path string true "Sandbox ID"
+// @Param id path string true "Node id"
+// @Param sandboxId path string true "Sandbox ID"
 // @Success 200 {object} ProxyResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/sandboxes/{id} [delete]
+// @Router /api/v1/nodes/{id}/sandboxes/{sandboxId} [delete]
 func (h *Handler) NodeDeleteSandbox(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return
 	}
 
-	out, err := client.DeleteSandbox(c.Request.Context(), c.Param("id"))
+	out, err := client.DeleteSandbox(c.Request.Context(), c.Param("sandboxId"))
 	respondProxy(c, out, err)
 }
 
@@ -306,24 +379,24 @@ func (h *Handler) NodeDeleteSandbox(c *gin.Context) {
 // @Description Proxies container logs request to selected node sandboxd.
 // @Tags orchestrator-proxy
 // @Produce json
-// @Param name path string true "Node name"
-// @Param id path string true "Sandbox ID"
+// @Param id path string true "Node id"
+// @Param sandboxId path string true "Sandbox ID"
 // @Param container path string true "Container name"
 // @Param cursor query string false "Cursor offset"
 // @Param limit query int false "Line limit"
 // @Success 200 {object} ProxyResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/sandboxes/{id}/containers/{container}/logs [get]
+// @Router /api/v1/nodes/{id}/sandboxes/{sandboxId}/containers/{container}/logs [get]
 func (h *Handler) NodeContainerLogs(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return
 	}
 
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	out, err := client.GetContainerLogs(c.Request.Context(), c.Param("id"), c.Param("container"), c.Query("cursor"), limit)
+	out, err := client.GetContainerLogs(c.Request.Context(), c.Param("sandboxId"), c.Param("container"), c.Query("cursor"), limit)
 	respondProxy(c, out, err)
 }
 
@@ -332,13 +405,13 @@ func (h *Handler) NodeContainerLogs(c *gin.Context) {
 // @Description Proxies manual reconcile trigger to selected node sandboxd.
 // @Tags orchestrator-proxy
 // @Produce json
-// @Param name path string true "Node name"
+// @Param id path string true "Node id"
 // @Success 200 {object} ProxyResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
-// @Router /api/v1/nodes/{name}/reconcile [post]
+// @Router /api/v1/nodes/{id}/reconcile [post]
 func (h *Handler) NodeReconcile(c *gin.Context) {
-	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("name"))
+	client, _, err := h.svc.SandboxOpClientForNode(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		respondNodeErr(c, err)
 		return

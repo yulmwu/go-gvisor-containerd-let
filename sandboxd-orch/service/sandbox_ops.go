@@ -224,7 +224,7 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 			continue
 		}
 
-		used, err := s.sbxRepo.NodeUsedHostPorts(ctx, n.Name)
+		used, err := s.sbxRepo.NodeUsedHostPorts(ctx, n.ID)
 		if err != nil {
 			continue
 		}
@@ -250,17 +250,17 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		lhs := cands[i].node.Resources.AvailableCPUMilli - needCPU
 		rhs := cands[j].node.Resources.AvailableCPUMilli - needCPU
 		if lhs == rhs {
-			return cands[i].node.Name < cands[j].node.Name
+			return cands[i].node.ID < cands[j].node.ID
 		}
 
 		return lhs > rhs
 	})
 	chosen := cands[0]
-	slog.Info("scheduler selected node", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.Name), slog.Int("port_count", len(chosen.ports)), slog.Int64("need_cpu_milli", needCPU), slog.Int64("need_memory_bytes", needMem))
+	slog.Info("scheduler selected node", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.ID), slog.Int("port_count", len(chosen.ports)), slog.Int64("need_cpu_milli", needCPU), slog.Int64("need_memory_bytes", needMem))
 
-	if err := s.sbxRepo.ReserveSandboxPortsAndSchedule(ctx, sbx.ID, chosen.node.Name, chosen.ports); err != nil {
+	if err := s.sbxRepo.ReserveSandboxPortsAndSchedule(ctx, sbx.ID, chosen.node.ID, chosen.ports); err != nil {
 		if errors.Is(err, repo.ErrPortReservationConflict) {
-			slog.Info("scheduler reserve ports conflict; will retry next tick", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.Name), slog.Any("error", err))
+			slog.Info("scheduler reserve ports conflict; will retry next tick", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.ID), slog.Any("error", err))
 			return
 		}
 
@@ -268,7 +268,7 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		sbx.Status.LastError = err.Error()
 		_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, sbx.Status)
 
-		slog.Warn("scheduler reserve ports failed", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.Name), slog.Any("error", err))
+		slog.Warn("scheduler reserve ports failed", slog.String("sandbox", sbx.ID), slog.String("node", chosen.node.ID), slog.Any("error", err))
 		return
 	}
 
@@ -278,7 +278,10 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		return
 	}
 
-	fresh.Status.ExternalIP = strings.TrimSpace(chosen.node.Resources.ExternalIP)
+	fresh.Status.External = strings.TrimSpace(chosen.node.Resources.External)
+	if fresh.Status.External == "" {
+		fresh.Status.External = "(none)"
+	}
 	if err := s.createSandboxOnNode(ctx, *fresh); err != nil {
 		fresh.Status.Phase = types.SandboxPhaseFailed
 		fresh.Status.LastError = err.Error()
@@ -291,6 +294,19 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		return
 	}
 
+	// Refresh external from repository right after create so callers can see it immediately.
+	// (ListNodes snapshot used for scheduling can be stale relative to External object updates.)
+	if latestNode, err := s.repo.GetNode(ctx, fresh.Status.NodeName); err == nil {
+		if ext := strings.TrimSpace(latestNode.Resources.External); ext != "" {
+			fresh.Status.External = ext
+		} else {
+			fresh.Status.External = "(none)"
+		}
+	}
+	if ip := s.fetchSandboxIPQuick(ctx, fresh.Status.NodeName, fresh.ID); ip != "" {
+		fresh.Status.IP = ip
+	}
+
 	fresh.Status.Phase = types.SandboxPhaseRunning
 	fresh.Status.LastError = ""
 	_ = s.sbxRepo.UpdateSandboxStatus(ctx, fresh.ID, fresh.Status)
@@ -298,6 +314,30 @@ func (s *Service) scheduleOne(ctx context.Context, sbx types.Sandbox) {
 		slog.Warn("scheduler logical resource increment failed", slog.String("sandbox", fresh.ID), slog.String("node", fresh.Status.NodeName), slog.Any("error", err))
 	}
 	slog.Info("scheduler sandbox running", slog.String("sandbox", fresh.ID), slog.String("node", fresh.Status.NodeName))
+}
+
+func (s *Service) fetchSandboxIPQuick(ctx context.Context, nodeName, sandboxID string) string {
+	c, _, err := s.SandboxOpClientForNode(ctx, nodeName)
+	if err != nil {
+		return ""
+	}
+
+	for i := 0; i < 10; i++ {
+		st, err := c.SandboxStatuses(ctx, []string{sandboxID})
+		if err != nil {
+			return ""
+		}
+
+		if len(st.Items) > 0 {
+			if ip := strings.TrimSpace(st.Items[0].IP); ip != "" {
+				return ip
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return ""
 }
 
 func (s *Service) createSandboxOnNode(ctx context.Context, sbx types.Sandbox) error {
@@ -588,6 +628,13 @@ func (s *Service) runSandboxStatusSyncOnce(ctx context.Context) {
 }
 
 func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, nodeName string, sandboxes []types.Sandbox) {
+	nodeExternal := "(none)"
+	if n, err := s.repo.GetNode(ctx, nodeName); err == nil {
+		if ext := strings.TrimSpace(n.Resources.External); ext != "" {
+			nodeExternal = ext
+		}
+	}
+
 	ids := make([]string, 0, len(sandboxes))
 	for _, sbx := range sandboxes {
 		ids = append(ids, sbx.ID)
@@ -623,8 +670,13 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 			st := latest.Status
 			st.Phase = types.SandboxPhaseFailed
 			st.LastError = "deleted on sbxlet node"
-			st.ExternalIP = inferSandboxExternalIP(resp.ExternalIP, latest.Status.ExternalIP)
-			_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, st)
+			st.External = inferSandboxExternal(nodeExternal, latest.Status.External)
+			ok, err := s.sbxRepo.UpdateSandboxStatusIfUnchanged(ctx, sbx.ID, st, latest.UpdatedAt)
+			if err != nil {
+				slog.Warn("sandbox status sync persist failed", slog.String("sandbox", sbx.ID), slog.Any("error", err))
+			} else if !ok {
+				slog.Debug("sandbox status sync skipped stale write", slog.String("sandbox", sbx.ID))
+			}
 			continue
 		}
 
@@ -644,13 +696,23 @@ func (s *Service) syncNodeSandboxBatch(ctx context.Context, c *client.Client, no
 		}
 
 		next, changed := mergeSandboxPhaseWithNodeState(latest.Status, nodeSt)
-		if ext := inferSandboxExternalIP(resp.ExternalIP, latest.Status.ExternalIP); next.ExternalIP != ext {
-			next.ExternalIP = ext
+		if ip := strings.TrimSpace(nodeSt.IP); ip != "" && next.IP != ip {
+			next.IP = ip
+			changed = true
+		}
+
+		if ext := inferSandboxExternal(nodeExternal, latest.Status.External); next.External != ext {
+			next.External = ext
 			changed = true
 		}
 
 		if changed {
-			_ = s.sbxRepo.UpdateSandboxStatus(ctx, sbx.ID, next)
+			ok, err := s.sbxRepo.UpdateSandboxStatusIfUnchanged(ctx, sbx.ID, next, latest.UpdatedAt)
+			if err != nil {
+				slog.Warn("sandbox status sync persist failed", slog.String("sandbox", sbx.ID), slog.Any("error", err))
+			} else if !ok {
+				slog.Debug("sandbox status sync skipped stale write", slog.String("sandbox", sbx.ID))
+			}
 		}
 	}
 }
@@ -741,11 +803,16 @@ func mergeSandboxPhaseWithNodeState(cur types.SandboxStatus, st client.SandboxSy
 	return next, changed
 }
 
-func inferSandboxExternalIP(fromNodeResp, fallback string) string {
+func inferSandboxExternal(fromNodeResp, fallback string) string {
 	ip := strings.TrimSpace(fromNodeResp)
 	if ip != "" {
 		return ip
 	}
 
-	return strings.TrimSpace(fallback)
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return "(none)"
+	}
+
+	return fallback
 }

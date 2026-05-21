@@ -129,3 +129,66 @@ func TestSandboxRepo_ReserveConflict(t *testing.T) {
 		t.Fatal("expected conflict error")
 	}
 }
+
+func TestSandboxRepo_UpdateSandboxStatusIfUnchanged(t *testing.T) {
+	r, err := NewSQLite(filepath.Join(t.TempDir(), "repo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	ctx := context.Background()
+	if err := r.CreateSandbox(ctx, types.Sandbox{
+		ID: "sbx-cas",
+		Spec: types.SandboxSpec{
+			Containers: []types.SandboxContainerSpec{{
+				Name:     "c",
+				Image:    "nginx",
+				Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"},
+			}},
+		},
+		Status: types.SandboxStatus{Phase: types.SandboxPhasePending},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cur, err := r.GetSandbox(ctx, "sbx-cas")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	next := cur.Status
+	next.Phase = types.SandboxPhaseRunning
+	next.External = "host1.swua.kr"
+
+	ok, err := r.UpdateSandboxStatusIfUnchanged(ctx, cur.ID, next, cur.UpdatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected CAS update success")
+	}
+
+	stale := cur.Status
+	stale.Phase = types.SandboxPhaseFailed
+	stale.LastError = "stale overwrite"
+
+	ok, err = r.UpdateSandboxStatusIfUnchanged(ctx, cur.ID, stale, cur.UpdatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected CAS update to fail on stale updated_at")
+	}
+
+	got, err := r.GetSandbox(ctx, "sbx-cas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+	if got.Status.External != "host1.swua.kr" {
+		t.Fatalf("external=%q", got.Status.External)
+	}
+}

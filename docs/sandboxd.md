@@ -151,7 +151,7 @@ Base URL: `http://localhost:8080`
         "createdAt": "2026-05-08T11:00:00Z",
         "updatedAt": "2026-05-08T11:00:00Z"
     },
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -235,7 +235,7 @@ Base URL: `http://localhost:8080`
         }
     ],
     "next_cursor": "sbx-http-demo",
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -304,7 +304,7 @@ Base URL: `http://localhost:8080`
         "createdAt": "2026-05-08T11:00:00Z",
         "updatedAt": "2026-05-08T11:00:12Z"
     },
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -380,7 +380,7 @@ Note:
         "next_cursor": "154",
         "has_more": false
     },
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -395,7 +395,7 @@ Note:
 {
     "id": "sbx-http-demo",
     "phase": "deleted",
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 
@@ -410,7 +410,7 @@ Note:
 ```json
 {
     "ok": true,
-    "external_ip": "203.0.113.10"
+    "external": "203.0.113.10"
 }
 ```
 

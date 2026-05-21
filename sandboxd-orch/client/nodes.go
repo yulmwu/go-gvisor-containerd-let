@@ -10,9 +10,8 @@ import (
 )
 
 type NodeStatus struct {
-	OK         bool                `json:"ok"`
-	ExternalIP string              `json:"external_ip,omitempty"`
-	Resources  types.NodeResources `json:"resources"`
+	OK        bool                `json:"ok"`
+	Resources types.NodeResources `json:"resources"`
 }
 
 func (c *Client) Healthz(ctx context.Context) error {

@@ -17,6 +17,8 @@ func normalizeResource(s string) string {
 		return "sandbox"
 	case "node", "nodes", "n":
 		return "node"
+	case "external", "externals", "ext", "e":
+		return "external"
 	default:
 		return s
 	}
@@ -53,7 +55,7 @@ func parseResourceList(arg string) ([]string, error) {
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		res := normalizeResource(p)
-		if res != "sandbox" && res != "node" {
+		if res != "sandbox" && res != "node" && res != "external" {
 			return nil, fmt.Errorf("unsupported resource %q", strings.TrimSpace(p))
 		}
 

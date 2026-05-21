@@ -41,7 +41,7 @@ func newServiceWithNode(t *testing.T, sandboxd *httptest.Server) *Service {
 
 	u, _ := url.Parse(sandboxd.URL)
 	port, _ := strconv.Atoi(u.Port())
-	if _, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n1", IP: u.Hostname(), Port: port}, "api"); err != nil {
+	if _, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "n1", IP: u.Hostname(), Port: port}, "api"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,6 +79,7 @@ func TestSandboxCreateAndSchedule_DynamicPort(t *testing.T) {
 	defer sbxNode.Close()
 
 	s := newServiceWithNode(t, sbxNode)
+	s.cfg.StatusSyncInterval = 10 * time.Millisecond
 	defer s.Close()
 
 	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
@@ -229,6 +230,72 @@ func TestSandboxReconcile_TTLDelete(t *testing.T) {
 	}
 }
 
+func TestSandboxCreate_ExternalVisibleImmediatelyAfterRunning(t *testing.T) {
+	sbxNode := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandbox": map[string]any{"id": "sbx-ext-now"}})
+			return
+		}
+
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "sbx-ext-now", "phase": "running", "ip": "10.89.1.77"},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer sbxNode.Close()
+
+	s := newServiceWithNode(t, sbxNode)
+	defer s.Close()
+
+	if err := s.UpsertExternalObject(context.Background(), types.CreateExternalObjectRequest{
+		ID: "ext-now",
+		Spec: types.ExternalObjectSpec{
+			NodeID:   "n1",
+			External: "host1.swua.kr",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := s.CreateSandbox(context.Background(), types.CreateSandboxObjectRequest{
+		ID: "sbx-ext-now",
+		Spec: types.SandboxSpec{
+			Ports: []types.SandboxPortSpec{{ContainerPort: 3000, Protocol: "tcp"}},
+			Containers: []types.SandboxContainerSpec{{
+				Name:     "app",
+				Image:    "nginx",
+				Resource: types.SandboxResource{CPU: "100m", Memory: "64Mi"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.runSchedulerOnce(context.Background())
+	got, err := s.GetSandbox(context.Background(), "sbx-ext-now")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status.Phase != types.SandboxPhaseRunning {
+		t.Fatalf("phase=%s", got.Status.Phase)
+	}
+
+	if got.Status.External != "host1.swua.kr" {
+		t.Fatalf("external=%q", got.Status.External)
+	}
+
+	if got.Status.IP != "10.89.1.77" {
+		t.Fatalf("ip=%q", got.Status.IP)
+	}
+}
+
 func TestScheduler_ScoringChoosesHigherAvailableCPUNode(t *testing.T) {
 	var n1Creates, n2Creates int
 	n1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +325,7 @@ func TestScheduler_ScoringChoosesHigherAvailableCPUNode(t *testing.T) {
 
 	u2, _ := url.Parse(n2.URL)
 	p2, _ := strconv.Atoi(u2.Port())
-	_, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{Name: "n2", IP: u2.Hostname(), Port: p2}, "api")
+	_, err := s.RegisterNode(context.Background(), types.RegisterNodeRequest{ID: "n2", IP: u2.Hostname(), Port: p2}, "api")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -646,6 +713,20 @@ func TestStartLoops(t *testing.T) {
 	cancel()
 }
 
+func TestStartSandboxStatusSyncLoop(t *testing.T) {
+	sbxNode := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer sbxNode.Close()
+	s := newServiceWithNode(t, sbxNode)
+	s.cfg.StatusSyncInterval = 10 * time.Millisecond
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.StartSandboxStatusSyncLoop(ctx)
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+}
+
 func TestDeleteSandbox_WhenNodeAlreadyRemoved_CleansLocally(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes" {
@@ -893,14 +974,14 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 		case r.URL.Path == "/healthz":
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		case r.URL.Path == "/v1/node/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "external_ip": "203.0.113.10", "resources": map[string]any{"capacity_cpu_milli": 1000}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "external": "203.0.113.10", "resources": map[string]any{"capacity_cpu_milli": 1000}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/statuses":
 			calls++
 			if calls == 1 {
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"external_ip": "203.0.113.10",
+					"external": "203.0.113.10",
 					"items": []map[string]any{
-						{"id": "sbx-run", "phase": "running"},
+						{"id": "sbx-run", "phase": "running", "ip": "10.89.1.10"},
 					},
 					"missing": []string{},
 				})
@@ -909,11 +990,12 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 
 			if calls == 2 {
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"external_ip": "203.0.113.10",
+					"external": "203.0.113.10",
 					"items": []map[string]any{
 						{
 							"id":    "sbx-err",
 							"phase": "error",
+							"ip":    "10.89.1.11",
 							"error": "sandbox error",
 							"unhealthy_containers": []map[string]any{
 								{"name": "app", "phase": "error", "error": "image pull failed"},
@@ -927,9 +1009,9 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 			}
 
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"external_ip": "203.0.113.10",
+				"external": "203.0.113.10",
 				"items": []map[string]any{
-					{"id": "sbx-recover", "phase": "running"},
+					{"id": "sbx-recover", "phase": "running", "ip": "10.89.1.12"},
 				},
 				"missing": []string{},
 			})
@@ -988,8 +1070,11 @@ func TestRunSandboxStatusSyncOnce_BatchAndStatusUpdate(t *testing.T) {
 	if run.Status.Phase != types.SandboxPhaseRunning {
 		t.Fatalf("sbx-run phase=%s", run.Status.Phase)
 	}
-	if run.Status.ExternalIP != "203.0.113.10" {
-		t.Fatalf("sbx-run external_ip=%q", run.Status.ExternalIP)
+	if run.Status.External != "(none)" {
+		t.Fatalf("sbx-run external=%q", run.Status.External)
+	}
+	if run.Status.IP != "10.89.1.10" {
+		t.Fatalf("sbx-run ip=%q", run.Status.IP)
 	}
 
 	errSbx, _ := s.GetSandbox(context.Background(), "sbx-err")
@@ -1029,11 +1114,11 @@ func TestFindMissing(t *testing.T) {
 	}
 }
 
-func TestInferSandboxExternalIP(t *testing.T) {
-	if got := inferSandboxExternalIP(" 203.0.113.10 ", "198.51.100.2"); got != "203.0.113.10" {
+func TestInferSandboxExternal(t *testing.T) {
+	if got := inferSandboxExternal(" 203.0.113.10 ", "198.51.100.2"); got != "203.0.113.10" {
 		t.Fatalf("prefer response ip, got=%q", got)
 	}
-	if got := inferSandboxExternalIP(" ", " 198.51.100.2 "); got != "198.51.100.2" {
+	if got := inferSandboxExternal(" ", " 198.51.100.2 "); got != "198.51.100.2" {
 		t.Fatalf("fallback ip, got=%q", got)
 	}
 }

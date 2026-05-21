@@ -36,9 +36,9 @@ func printAny(w io.Writer, v any, format string) error {
 
 func printSandboxTable(w io.Writer, items []map[string]string) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tPHASE\tNODE\tEXTERNAL_IP\tCREATED")
+	_, _ = fmt.Fprintln(tw, "NAME\tPHASE\tNODE\tEXTERNAL\tCREATED")
 	for _, it := range items {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", it["name"], it["phase"], it["node"], it["external_ip"], it["created"])
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", it["name"], it["phase"], it["node"], it["external"], it["created"])
 	}
 
 	_ = tw.Flush()
@@ -46,12 +46,12 @@ func printSandboxTable(w io.Writer, items []map[string]string) {
 
 func printSandboxTableWide(w io.Writer, items []map[string]string) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tPHASE\tNODE\tEXTERNAL_IP\tIP\tPORTS\tEGRESS\tCONTAINERS\tEXPIRE_AT\tLAST_ERROR\tCREATED")
+	_, _ = fmt.Fprintln(tw, "NAME\tPHASE\tNODE\tEXTERNAL\tIP\tPORTS\tEGRESS\tCONTAINERS\tEXPIRE_AT\tLAST_ERROR\tCREATED")
 	for _, it := range items {
 		_, _ = fmt.Fprintf(
 			tw,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			it["name"], it["phase"], it["node"], it["external_ip"], it["ip"], it["ports"], it["egress"], it["containers"], it["expire_at"], it["last_error"], it["created"],
+			it["name"], it["phase"], it["node"], it["external"], it["ip"], it["ports"], it["egress"], it["containers"], it["expire_at"], it["last_error"], it["created"],
 		)
 	}
 
@@ -60,9 +60,9 @@ func printSandboxTableWide(w io.Writer, items []map[string]string) {
 
 func printNodeTable(w io.Writer, items []map[string]string) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIP\tPORT\tEXTERNAL_IP\tUPDATED")
+	_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIP\tPORT\tEXTERNAL\tUPDATED")
 	for _, it := range items {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", it["name"], it["state"], it["ip"], it["port"], it["external_ip"], it["updated"])
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", it["name"], it["state"], it["ip"], it["port"], it["external"], it["updated"])
 	}
 
 	_ = tw.Flush()
@@ -70,13 +70,23 @@ func printNodeTable(w io.Writer, items []map[string]string) {
 
 func printNodeTableWide(w io.Writer, items []map[string]string) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIP\tPORT\tEXTERNAL_IP\tCPU(ALLOC/USED/AVAIL)\tMEM(ALLOC/USED/AVAIL)\tLAST_ERROR\tHEARTBEAT\tUPDATED")
+	_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIP\tPORT\tEXTERNAL\tCPU(ALLOC/USED/AVAIL)\tMEM(ALLOC/USED/AVAIL)\tLAST_ERROR\tHEARTBEAT\tUPDATED")
 	for _, it := range items {
 		_, _ = fmt.Fprintf(
 			tw,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			it["name"], it["state"], it["ip"], it["port"], it["external_ip"], it["cpu"], it["mem"], it["last_error"], it["last_heartbeat"], it["updated"],
+			it["name"], it["state"], it["ip"], it["port"], it["external"], it["cpu"], it["mem"], it["last_error"], it["last_heartbeat"], it["updated"],
 		)
+	}
+
+	_ = tw.Flush()
+}
+
+func printExternalTable(w io.Writer, items []map[string]string) {
+	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNODE_ID\tEXTERNAL\tUPDATED")
+	for _, it := range items {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it["id"], it["node_id"], it["external"], it["updated"])
 	}
 
 	_ = tw.Flush()
@@ -141,17 +151,17 @@ func extractSandboxRows(items any) []map[string]string {
 		}
 
 		rows = append(rows, map[string]string{
-			"name":        toString(m["id"]),
-			"phase":       toString(status["phase"]),
-			"node":        toString(status["node_name"]),
-			"external_ip": toString(status["external_ip"]),
-			"ip":          ip,
-			"ports":       ports,
-			"egress":      toString(spec["egress"]),
-			"containers":  fmt.Sprintf("%d", containers),
-			"expire_at":   toString(status["expire_at"]),
-			"last_error":  toString(status["last_error"]),
-			"created":     toString(m["created_at"]),
+			"name":       toString(m["id"]),
+			"phase":      toString(status["phase"]),
+			"node":       toString(status["node_name"]),
+			"external":   toString(status["external"]),
+			"ip":         ip,
+			"ports":      ports,
+			"egress":     toString(spec["egress"]),
+			"containers": fmt.Sprintf("%d", containers),
+			"expire_at":  toString(status["expire_at"]),
+			"last_error": toString(status["last_error"]),
+			"created":    toString(m["created_at"]),
 		})
 	}
 
@@ -171,13 +181,19 @@ func extractNodeRows(items any) []map[string]string {
 		if !ok {
 			continue
 		}
+
 		res, _ := m["resources"].(map[string]any)
+		id := toString(m["id"])
+		if id == "" {
+			id = toString(m["name"])
+		}
+
 		rows = append(rows, map[string]string{
-			"name":           toString(m["name"]),
+			"name":           id,
 			"state":          toString(m["state"]),
 			"ip":             toString(m["ip"]),
 			"port":           toString(m["port"]),
-			"external_ip":    toString(res["external_ip"]),
+			"external":       toString(res["external"]),
 			"updated":        toString(m["updated_at"]),
 			"last_error":     toString(m["last_error"]),
 			"last_heartbeat": toString(m["last_heartbeat"]),
@@ -197,6 +213,31 @@ func extractNodeRows(items any) []map[string]string {
 	}
 
 	sort.Slice(rows, func(i, j int) bool { return rows[i]["name"] < rows[j]["name"] })
+	return rows
+}
+
+func extractExternalRows(items any) []map[string]string {
+	arr, ok := items.([]any)
+	if !ok {
+		return nil
+	}
+
+	rows := make([]map[string]string, 0, len(arr))
+	for _, it := range arr {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		rows = append(rows, map[string]string{
+			"id":       toString(m["id"]),
+			"node_id":  toString(m["node_id"]),
+			"external": toString(m["external"]),
+			"updated":  toString(m["updated_at"]),
+		})
+	}
+
+	sort.Slice(rows, func(i, j int) bool { return rows[i]["id"] < rows[j]["id"] })
 	return rows
 }
 

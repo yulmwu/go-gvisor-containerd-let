@@ -27,23 +27,28 @@ func NewRouter(svc *service.Service, cfg config.Config, logger *logging.Logger) 
 
 	api := r.Group("/api/v1")
 	{
-		api.GET("/nodes", h.ListNodes)
-		api.GET("/nodes/:name", h.GetNode)
-		api.POST("/nodes/register", h.RegisterNode)
-		api.DELETE("/nodes/:name", h.DeleteNode)
-		api.POST("/nodes/:name/heartbeat", h.HeartbeatNode)
-
-		api.GET("/nodes/:name/sandboxes", h.NodeListSandboxes)
-		api.GET("/nodes/:name/sandboxes/:id", h.NodeGetSandbox)
-		api.POST("/nodes/:name/sandboxes", h.NodeCreateSandbox)
-		api.DELETE("/nodes/:name/sandboxes/:id", h.NodeDeleteSandbox)
-		api.GET("/nodes/:name/sandboxes/:id/containers/:container/logs", h.NodeContainerLogs)
-		api.POST("/nodes/:name/reconcile", h.NodeReconcile)
-
 		api.POST("/sandboxes", h.CreateSandbox)
 		api.GET("/sandboxes", h.ListSandboxes)
 		api.GET("/sandboxes/:id", h.GetSandbox)
 		api.DELETE("/sandboxes/:id", h.DeleteSandbox)
+
+		api.POST("/nodes", h.CreateNodeObject)
+		api.GET("/nodes", h.ListNodes)
+		api.GET("/nodes/:id", h.GetNode)
+		api.DELETE("/nodes/:id", h.DeleteNode)
+
+		api.POST("/externals", h.UpsertExternalObject)
+		api.GET("/externals", h.ListExternals)
+		api.GET("/externals/:id", h.GetExternal)
+		api.DELETE("/externals/:id", h.DeleteExternal)
+
+		api.POST("/nodes/:id/heartbeat", h.HeartbeatNode)
+		api.GET("/nodes/:id/sandboxes", h.NodeListSandboxes)
+		api.GET("/nodes/:id/sandboxes/:sandboxId", h.NodeGetSandbox)
+		api.POST("/nodes/:id/sandboxes", h.NodeCreateSandbox)
+		api.DELETE("/nodes/:id/sandboxes/:sandboxId", h.NodeDeleteSandbox)
+		api.GET("/nodes/:id/sandboxes/:sandboxId/containers/:container/logs", h.NodeContainerLogs)
+		api.POST("/nodes/:id/reconcile", h.NodeReconcile)
 	}
 
 	return r

@@ -251,7 +251,7 @@
             function renderStructured(data) {
                 structuredEl.innerHTML = ''
                 if (!data || typeof data !== 'object') return
-                const externalIP = data.external_ip || ''
+                const externalIP = data.external || ''
 
                 const sandbox = data.sandbox || (Array.isArray(data.items) ? null : data)
                 if (sandbox && sandbox.id) {
